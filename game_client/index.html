@@ -1,0 +1,24 @@
+<html>
+    <head>
+    <script>
+        const socket = new WebSocket("ws://localhost:9090");
+
+        function onButton() {
+            var test = {};
+            test['message'] = document.getElementById('chat').value;
+            socket.send(JSON.stringify(test));
+            console.log(JSON.stringify(test));
+            document.getElementById('chat').value = "";
+        }
+
+        socket.addEventListener('message', function (event) {
+            console.log('Message from server ', event.data);
+        });
+    </script>
+    </head>
+
+    <body>
+        <input type="text" id="chat"></input>
+        <button type="button" onClick="onButton()">send</button>
+    </body>
+</html>

@@ -1,24 +1,77 @@
 <html>
     <head>
-    <script>
-        const socket = new WebSocket("ws://localhost:9090");
+        <meta charset="utf-8">
+        <meta http-equiv="x-ua-compatible" content="ie=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        function onButton() {
-            var test = {};
-            test['message'] = document.getElementById('chat').value;
-            socket.send(JSON.stringify(test));
-            console.log(JSON.stringify(test));
-            document.getElementById('chat').value = "";
-        }
-
-        socket.addEventListener('message', function (event) {
-            console.log('Message from server ', event.data);
-        });
-    </script>
+        <link rel="stylesheet" href="css/default.css">
+        <script src="lib/two.js"></script>
     </head>
 
     <body>
-        <input type="text" id="chat"></input>
-        <button type="button" onClick="onButton()">send</button>
+        <div class="section" id="game"></div>
+        <div class="scripts">
+        <script>
+            var twoElement = document.getElementById('game');
+            var two = new Two({
+                fullscreen: true,
+                autostart: true
+            }).appendTo(twoElement);
+
+            var world = two.makeGroup();
+            world.translation.set(two.width / 2, two.height / 2);
+
+            const socket = new WebSocket("ws://localhost:9090");
+
+            var height = 40, width = 40;
+            var box_height = 75, box_width = 75;
+            var start_x = -1*width*box_width/2.0,
+                start_y = -1*height*box_height/2.0;
+
+            for(var i=0; i < width; i++) {
+                for(var j=0; j < height; j++) {
+                    var rect = two.makeRectangle(
+                            start_x+i*box_width,
+                            start_y+j*box_height,
+                            box_width,
+                            box_height
+                        );
+                    world.add(rect);
+                }
+            }
+
+            window.addEventListener("click", function(event) {
+                var x = event.clientX;
+                var y = event.clientY;
+
+                var i = Math.floor((x-start_x+box_width/2.0)/box_width);
+                var j = Math.floor((y-start_y+box_height/2.0)/box_height);
+
+                console.log(i + ", " + j);
+
+                var mouseUpdate = {
+                    type: "rt_update",
+                    data: {
+                        x: i,
+                        y: j,
+                    },
+                };
+
+                socket.send(JSON.stringify(mouseUpdate));
+            });
+
+            function onButton() {
+                var test = {};
+                test['message'] = document.getElementById('chat').value;
+                socket.send(JSON.stringify(test));
+                console.log(JSON.stringify(test));
+                document.getElementById('chat').value = "";
+            }
+
+            socket.addEventListener('message', function (event) {
+                console.log('Message from server ', event.data);
+            });
+        </script>
+        </div>
     </body>
 </html>

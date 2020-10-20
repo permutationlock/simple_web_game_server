@@ -2,8 +2,10 @@
 #define CATACRAWL_GAME_SERVER_HPP
 
 #include <websocketpp/config/asio_no_tls.hpp>
-
 #include <websocketpp/server.hpp>
+
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 #include <iostream>
 #include <set>
@@ -11,8 +13,11 @@
 #include <condition_variable>
 #include <chrono>
 
+#include "game.hpp"
+
 using namespace std::chrono_literals;
 
+// Minimum time between game updates
 constexpr std::chrono::nanoseconds timestep(1000ms);
 
 typedef websocketpp::server<websocketpp::config::asio> server;
@@ -50,22 +55,38 @@ class game_server {
 public:
     game_server(server* s) : m_server_ptr(s), m_time(0)  {}
 
-    void add_player(connection_hdl hdl) {
-        lock_guard<mutex> guard(m_connection_lock);
-        m_connections.insert(hdl);
+    void add_player(player_id id, connection_hdl hdl) {
+        lock_guard<mutex> guard(m_game_lock);
+        m_player_connection[id] = hdl;
+        m_player_status[id] = true;
     }
 
-    void remove_player(connection_hdl hdl) {
-        lock_guard<mutex> guard(m_connection_lock);
-
-        m_connections.erase(hdl);
+    void reconnect(player_id id, connection_hdl hdl) {
+        lock_guard<mutex> guard(m_game_lock);
+        m_player_connection[id] = hdl;
+        m_player_status[id] = true;
     }
 
-    void broadcast(std::string msg) {
-        lock_guard<mutex> guard(m_connection_lock);
+    void remove_player(player_id id) {
+        lock_guard<mutex> guard(m_game_lock);
+        m_player_connection.erase(id);
+        m_player_status.erase(id);
+    }
 
-        for (auto it = m_connections.begin(); it != m_connections.end(); ++it) {
-            m_server_ptr->send(*it, msg, websocketpp::frame::opcode::text);
+    void disconnect(player_id id) {
+        lock_guard<mutex> guard(m_game_lock);
+        m_player_status[id] = false;
+    }
+
+    void broadcast(const std::string& text) {
+        lock_guard<mutex> guard(m_game_lock);
+
+        for (auto it = m_player_connection.begin(); it != m_player_connection.end(); ++it) {
+            player_id id = it->first;
+            connection_hdl hdl = it->second;
+            if(m_player_status[id]) {
+                m_server_ptr->send(hdl, text, websocketpp::frame::opcode::text);
+            }
         }
     }
 
@@ -74,11 +95,10 @@ public:
         m_time += delta_time;
     }
 private:
-    typedef std::set<connection_hdl,std::owner_less<connection_hdl> > con_list;
-
-    con_list m_connections;
+    std::map<player_id, connection_hdl> m_player_connection;
+    std::map<player_id, bool> m_player_status;
     server* m_server_ptr;
-    mutex m_connection_lock;
+    mutex m_game_lock;
     long m_time = 0;
 };
 
@@ -116,7 +136,6 @@ public:
             m_actions.push(action(SUBSCRIBE,hdl));
         }
         m_action_cond.notify_one();
-        m_match_cond.notify_one();
     }
 
     void on_close(connection_hdl hdl) {
@@ -132,40 +151,109 @@ public:
         // queue message up for sending by processing thread
         {
             lock_guard<mutex> guard(m_action_lock);
-            std::cout << "on_message" << std::endl;
+            std::cout << "on_message: " << msg->get_payload() << std::endl;
             m_actions.push(action(MESSAGE,hdl,msg));
         }
         m_action_cond.notify_one();
     }
 
+    void setup_id(connection_hdl hdl, const std::string& text) {
+        json login_json = json::parse(text, nullptr, false);
+
+        if(login_json.is_discarded()) {
+            std::cout << "login message not valid json" << std::endl;
+            return;
+        }
+        if(login_json.contains("data")) {
+            json data_json = login_json.at("data");
+            if(data_json.contains("id")) {
+                lock_guard<mutex> player_guard(m_player_lock);
+
+                player_id id = data_json.at("id");
+                m_connections.erase(hdl);
+                m_player_map[hdl] = id;
+
+                lock_guard<mutex> game_guard(m_game_list_lock);
+
+                if(m_game_map.count(id) < 1) {
+                    std::cout << "assigning connection to id: " << id << std::endl;
+                    // this player id is new, put it in the new player list
+                    m_players[id] = hdl;
+
+                    // notify the matchmaker that a new player is available
+                    m_match_cond.notify_one();
+                }
+                else {
+                    std::cout << "reconnecting id: " << id << std::endl;
+                    // this player is reconnecting
+                    m_game_map[id]->reconnect(id, hdl);
+                }
+            }
+        }
+    }
+
     void process_messages() {
         while(1) {
-            unique_lock<mutex> lock(m_action_lock);
+            unique_lock<mutex> action_lock(m_action_lock);
 
             while(m_actions.empty()) {
-                m_action_cond.wait(lock);
+                m_action_cond.wait(action_lock);
             }
 
             action a = m_actions.front();
             m_actions.pop();
 
-            lock.unlock();
+            action_lock.unlock();
 
             if (a.type == SUBSCRIBE) {
-                lock_guard<mutex> guard(m_connection_lock);
+                lock_guard<mutex> player_guard(m_player_lock);
                 m_connections.insert(a.hdl);
             } else if (a.type == UNSUBSCRIBE) {
-                lock_guard<mutex> guard(m_connection_lock);
-                if(m_connections.count(a.hdl)) {
+                lock_guard<mutex> player_guard(m_player_lock);
+                if(m_player_map.count(a.hdl) < 1) {
+                    std::cout << "player disconnected without providing id"
+                        << std::endl;
+                    // connection did not provide a player id
                     m_connections.erase(a.hdl);
                 } else {
-                    std::cout << "removing player from game" << std::endl;
-                    m_game_map[a.hdl]->remove_player(a.hdl);
-                    m_game_map.erase(a.hdl);
+                    // connection provided a player id
+                    player_id id = m_player_map[a.hdl];
+
+                    std::cout << "player " << m_player_map[a.hdl]
+                        << " disconnected" << std::endl;
+ 
+                    lock_guard<mutex> game_guard(m_game_list_lock);
+                    if(m_game_map.count(id) < 1) {
+                        // player was not matched to a game 
+                        m_players.erase(id);
+                        m_player_map.erase(a.hdl);
+                    }
+                    else {
+                        // player was matched to game, so notify it
+                        m_game_map[id]->disconnect(id);
+                        m_player_map.erase(a.hdl);
+                    }
                 }
             } else if (a.type == MESSAGE) {
-                if(m_game_map.count(a.hdl)) {
-                    m_game_map[a.hdl]->broadcast(a.msg->get_payload());
+                unique_lock<mutex> player_lock(m_player_lock);
+
+                if(m_player_map.count(a.hdl) < 1) {
+                    std::cout << "recieved message from connection with no id" << std::endl;
+                    player_lock.unlock();
+                    // player id not setup, must be a login message
+                    setup_id(a.hdl, a.msg->get_payload());
+                }
+                else {
+                    // player id already setup, route to their game
+                    player_id id = m_player_map[a.hdl];
+                    player_lock.unlock();
+
+                    std::cout << "received message from id: " << id << std::endl;
+
+                    lock_guard<mutex> game_guard(m_game_list_lock);
+                    if(m_game_map.count(id)) {
+                        m_game_map[id]->broadcast(a.msg->get_payload());
+                    }
                 }
             } else {
                 // undefined.
@@ -175,29 +263,33 @@ public:
 
     void match_players() {
         while(1) {
-            unique_lock<mutex> lock(m_connection_lock);
+            unique_lock<mutex> lock(m_player_lock);
             
-            while(m_connections.size() < 2) {
+            while(m_players.size() < 2) {
                 m_match_cond.wait(lock);
             }
             
-            std::cout << "creating game" << std::endl;
             auto gs = make_shared<game_server>(&m_server);
 
-            connection_hdl player_1 = *(m_connections.begin());
-            connection_hdl player_2 = *(++m_connections.begin());
+            auto it1 = m_players.begin();
+            auto it2 = ++m_players.begin();
+            player_id p1_id = it1->first;
+            connection_hdl p1_hdl = it1->second;
+            player_id p2_id = it2->first;
+            connection_hdl p2_hdl = it2->second;
+            m_players.erase(p1_id);
+            m_players.erase(p2_id);
 
-            gs->add_player(player_1);
-            gs->add_player(player_2);
+            std::cout << "creating game between " << p1_id
+                << " and " << p2_id << std::endl;
 
-            m_game_map[player_1] = gs;
-            m_game_map[player_2] = gs;
+            gs->add_player(p1_id, p1_hdl);
+            gs->add_player(p2_id, p2_hdl);
 
-            m_connections.erase(player_1);
-            m_connections.erase(player_2);
-
-            unique_lock<mutex> glock(m_game_list_lock);
-            games.push_back(gs);
+            lock_guard<mutex> guard(m_game_list_lock);
+            m_game_map[p1_id] = gs;
+            m_game_map[p2_id] = gs;
+            m_games.push_back(gs);
         }
     }
 
@@ -208,11 +300,11 @@ public:
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::high_resolution_clock::now() - time_start);
             if(delta_time >= timestep) {
-                unique_lock<mutex> lock(m_game_list_lock);
+                lock_guard<mutex> guard(m_game_list_lock);
                 time_start = std::chrono::high_resolution_clock::now();
                 
                 // consider using std::execution::par_unseq here !!
-                for(auto & gs : games) {
+                for(auto & gs : m_games) {
                     gs->update(delta_time.count());
                 }
             }
@@ -224,22 +316,25 @@ private:
     typedef std::set<connection_hdl,std::owner_less<connection_hdl> > con_list;
     typedef std::map<
             connection_hdl,
-            std::shared_ptr<game_server>,
+            player_id,
             std::owner_less<connection_hdl>
         > con_map;
 
     server m_server;
-    con_list m_connections;
-    con_map m_game_map;
+
+    con_map m_player_map;
+    std::map<player_id, std::shared_ptr<game_server> > m_game_map;
     std::queue<action> m_actions;
 
     mutex m_action_lock;
-    mutex m_connection_lock;
     mutex m_game_list_lock;
+    mutex m_player_lock;
     condition_variable m_action_cond;
     condition_variable m_match_cond;
-
-    std::vector<std::shared_ptr<game_server> > games;
+ 
+    con_list m_connections;
+    std::map<player_id, connection_hdl> m_players;
+    std::vector<std::shared_ptr<game_server> > m_games;
 };
 
 #endif // CATACRAWL_GAME_SERVER_HPP

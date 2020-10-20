@@ -14,9 +14,11 @@ using json = nlohmann::json;
 
 int main() {
     // Create a server endpoint
-    broadcast_server game_server;
+    main_server gs;
 
-    std::thread t(bind(&broadcast_server::process_messages,&game_server));
+    std::thread msg_process_thr(bind(&main_server::process_messages,&gs));
+    std::thread matchmaking_thr(bind(&main_server::match_players,&gs));
+    std::thread game_thr(bind(&main_server::update_games,&gs));
     
-    game_server.run(9090);
+    gs.run(9090);
 }

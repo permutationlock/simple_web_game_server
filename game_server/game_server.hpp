@@ -9,10 +9,11 @@
 #include <set>
 #include <mutex>
 #include <condition_variable>
+#include <chrono>
 
-/*#include <boost/thread.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/condition_variable.hpp>*/
+using namespace std::chrono_literals;
+
+constexpr std::chrono::nanoseconds timestep(1000ms);
 
 typedef websocketpp::server<websocketpp::config::asio> server;
 
@@ -22,15 +23,12 @@ using std::bind;
 using std::placeholders::_1;
 using std::placeholders::_2;
 
+using std::shared_ptr;
+using std::make_shared;
 using std::mutex;
 using std::lock_guard;
 using std::unique_lock;
 using std::condition_variable;
-
-/* on_open insert connection_hdl into channel
- * on_close remove connection_hdl from channel
- * on_message queue send to all channels
- */
 
 enum action_type {
     SUBSCRIBE,
@@ -48,16 +46,52 @@ struct action {
     server::message_ptr msg;
 };
 
-class broadcast_server {
+class game_server {
 public:
-    broadcast_server() {
+    game_server(server* s) : m_server_ptr(s), m_time(0)  {}
+
+    void add_player(connection_hdl hdl) {
+        lock_guard<mutex> guard(m_connection_lock);
+        m_connections.insert(hdl);
+    }
+
+    void remove_player(connection_hdl hdl) {
+        lock_guard<mutex> guard(m_connection_lock);
+
+        m_connections.erase(hdl);
+    }
+
+    void broadcast(std::string msg) {
+        lock_guard<mutex> guard(m_connection_lock);
+
+        for (auto it = m_connections.begin(); it != m_connections.end(); ++it) {
+            m_server_ptr->send(*it, msg, websocketpp::frame::opcode::text);
+        }
+    }
+
+    void update(long delta_time) {
+        std::cout << "Update with timestep: " << delta_time << std::endl;
+        m_time += delta_time;
+    }
+private:
+    typedef std::set<connection_hdl,std::owner_less<connection_hdl> > con_list;
+
+    con_list m_connections;
+    server* m_server_ptr;
+    mutex m_connection_lock;
+    long m_time = 0;
+};
+
+class main_server {
+public:
+    main_server() {
         // Initialize Asio Transport
         m_server.init_asio();
 
         // Register handler callbacks
-        m_server.set_open_handler(bind(&broadcast_server::on_open,this,::_1));
-        m_server.set_close_handler(bind(&broadcast_server::on_close,this,::_1));
-        m_server.set_message_handler(bind(&broadcast_server::on_message,this,::_1,::_2));
+        m_server.set_open_handler(bind(&main_server::on_open,this,::_1));
+        m_server.set_close_handler(bind(&main_server::on_close,this,::_1));
+        m_server.set_message_handler(bind(&main_server::on_message,this,::_1,::_2));
     }
 
     void run(uint16_t port) {
@@ -82,6 +116,7 @@ public:
             m_actions.push(action(SUBSCRIBE,hdl));
         }
         m_action_cond.notify_one();
+        m_match_cond.notify_one();
     }
 
     void on_close(connection_hdl hdl) {
@@ -121,29 +156,90 @@ public:
                 m_connections.insert(a.hdl);
             } else if (a.type == UNSUBSCRIBE) {
                 lock_guard<mutex> guard(m_connection_lock);
-                m_connections.erase(a.hdl);
+                if(m_connections.count(a.hdl)) {
+                    m_connections.erase(a.hdl);
+                } else {
+                    std::cout << "removing player from game" << std::endl;
+                    m_game_map[a.hdl]->remove_player(a.hdl);
+                    m_game_map.erase(a.hdl);
+                }
             } else if (a.type == MESSAGE) {
-                lock_guard<mutex> guard(m_connection_lock);
-
-                con_list::iterator it;
-                for (it = m_connections.begin(); it != m_connections.end(); ++it) {
-                    m_server.send(*it,a.msg);
+                if(m_game_map.count(a.hdl)) {
+                    m_game_map[a.hdl]->broadcast(a.msg->get_payload());
                 }
             } else {
                 // undefined.
             }
         }
     }
+
+    void match_players() {
+        while(1) {
+            unique_lock<mutex> lock(m_connection_lock);
+            
+            while(m_connections.size() < 2) {
+                m_match_cond.wait(lock);
+            }
+            
+            std::cout << "creating game" << std::endl;
+            auto gs = make_shared<game_server>(&m_server);
+
+            connection_hdl player_1 = *(m_connections.begin());
+            connection_hdl player_2 = *(++m_connections.begin());
+
+            gs->add_player(player_1);
+            gs->add_player(player_2);
+
+            m_game_map[player_1] = gs;
+            m_game_map[player_2] = gs;
+
+            m_connections.erase(player_1);
+            m_connections.erase(player_2);
+
+            unique_lock<mutex> glock(m_game_list_lock);
+            games.push_back(gs);
+        }
+    }
+
+    void update_games() {
+        auto time_start = std::chrono::high_resolution_clock::now();
+        while(1) { 
+            auto delta_time =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::high_resolution_clock::now() - time_start);
+            if(delta_time >= timestep) {
+                unique_lock<mutex> lock(m_game_list_lock);
+                time_start = std::chrono::high_resolution_clock::now();
+                
+                // consider using std::execution::par_unseq here !!
+                for(auto & gs : games) {
+                    gs->update(delta_time.count());
+                }
+            }
+            std::this_thread::sleep_for(std::min(1ms, delta_time));
+        }
+    }
+
 private:
     typedef std::set<connection_hdl,std::owner_less<connection_hdl> > con_list;
+    typedef std::map<
+            connection_hdl,
+            std::shared_ptr<game_server>,
+            std::owner_less<connection_hdl>
+        > con_map;
 
     server m_server;
     con_list m_connections;
+    con_map m_game_map;
     std::queue<action> m_actions;
 
     mutex m_action_lock;
     mutex m_connection_lock;
+    mutex m_game_list_lock;
     condition_variable m_action_cond;
+    condition_variable m_match_cond;
+
+    std::vector<std::shared_ptr<game_server> > games;
 };
 
 #endif // CATACRAWL_GAME_SERVER_HPP

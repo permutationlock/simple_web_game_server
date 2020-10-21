@@ -199,6 +199,10 @@ public:
     player_data get_player_data(player_id id) {
         return m_player_data[id];
     }
+
+    ~game_server() {
+        std::cout << "destructed game" << std::endl;
+    }
 private:
     std::map<player_id, player_data> m_player_data;
     server* m_server_ptr;
@@ -275,11 +279,11 @@ public:
 
                 player_id id = data_json.at("id");
                 m_connections.erase(hdl);
-                m_player_map[hdl] = id;
+                m_player_connections[hdl] = id;
 
                 lock_guard<mutex> game_guard(m_game_list_lock);
 
-                if(m_game_map.count(id) < 1) {
+                if(m_player_games.count(id) < 1) {
                     std::cout << "assigning connection to id: " << id << std::endl;
                     // this player id is new, put it in the new player list
                     m_players[id] = hdl;
@@ -290,7 +294,7 @@ public:
                 else {
                     std::cout << "reconnecting id: " << id << std::endl;
                     // this player is reconnecting
-                    m_game_map[id]->reconnect(id, hdl);
+                    m_player_games[id]->reconnect(id, hdl);
                 }
             }
         }
@@ -314,34 +318,34 @@ public:
                 m_connections.insert(a.hdl);
             } else if (a.type == UNSUBSCRIBE) {
                 lock_guard<mutex> player_guard(m_player_lock);
-                if(m_player_map.count(a.hdl) < 1) {
+                if(m_player_connections.count(a.hdl) < 1) {
                     std::cout << "player disconnected without providing id"
                         << std::endl;
                     // connection did not provide a player id
                     m_connections.erase(a.hdl);
                 } else {
                     // connection provided a player id
-                    player_id id = m_player_map[a.hdl];
+                    player_id id = m_player_connections[a.hdl];
 
-                    std::cout << "player " << m_player_map[a.hdl]
+                    std::cout << "player " << m_player_connections[a.hdl]
                         << " disconnected" << std::endl;
  
                     lock_guard<mutex> game_guard(m_game_list_lock);
-                    if(m_game_map.count(id) < 1) {
+                    if(m_player_games.count(id) < 1) {
                         // player was not matched to a game 
                         m_players.erase(id);
-                        m_player_map.erase(a.hdl);
+                        m_player_connections.erase(a.hdl);
                     }
                     else {
                         // player was matched to game, so notify it
-                        m_game_map[id]->disconnect(id);
-                        m_player_map.erase(a.hdl);
+                        m_player_games[id]->disconnect(id);
+                        m_player_connections.erase(a.hdl);
                     }
                 }
             } else if (a.type == MESSAGE) {
                 unique_lock<mutex> player_lock(m_player_lock);
 
-                if(m_player_map.count(a.hdl) < 1) {
+                if(m_player_connections.count(a.hdl) < 1) {
                     std::cout << "recieved message from connection with no id" << std::endl;
                     player_lock.unlock();
                     // player id not setup, must be a login message
@@ -349,15 +353,15 @@ public:
                 }
                 else {
                     // player id already setup, route to their game
-                    player_id id = m_player_map[a.hdl];
+                    player_id id = m_player_connections[a.hdl];
                     player_lock.unlock();
 
                     std::cout << "received message from id: " << id
                         << std::endl;
 
                     lock_guard<mutex> game_guard(m_game_list_lock);
-                    if(m_game_map.count(id)) {
-                        m_game_map[id]->process_player_update(id,
+                    if(m_player_games.count(id)) {
+                        m_player_games[id]->process_player_update(id,
                                 a.msg->get_payload());
                     }
                 }
@@ -393,8 +397,8 @@ public:
             gs->add_player(p2_id, p2_hdl);
 
             lock_guard<mutex> guard(m_game_list_lock);
-            m_game_map[p1_id] = gs;
-            m_game_map[p2_id] = gs;
+            m_player_games[p1_id] = gs;
+            m_player_games[p2_id] = gs;
             m_games.insert(gs);
         }
     }
@@ -431,20 +435,20 @@ public:
                                 game->get_player_data(id).connection;
 
                             // close websocket connection
-                            websocketpp::lib::error_code ec;
+                            websocketpp::lib::error_code error;
                             m_server.close(
                                     hdl,
                                     websocketpp::close::status::normal,
-                                    "", ec
+                                    "", error
                                 );
 
-                            if (ec) {
+                            if (error) {
                                 std::cout << "error closing connection for player "
-                                    << id << ": "  << ec.message() << std::endl;
+                                    << id << ": "  << error.message() << std::endl;
                             }
                             
                             // erase the game entry for this player
-                            m_game_map.erase(id);
+                            m_player_games.erase(id);
                         }
 
                         it = m_games.erase(it);
@@ -456,7 +460,7 @@ public:
     }
 
 private:
-    typedef std::set<connection_hdl,std::owner_less<connection_hdl> > con_list;
+    typedef std::set<connection_hdl,std::owner_less<connection_hdl> > con_set;
     typedef std::map<
             connection_hdl,
             player_id,
@@ -473,9 +477,9 @@ private:
     condition_variable m_action_cond;
     condition_variable m_match_cond;
  
-    con_list m_connections;
-    con_map m_player_map;
-    std::map<player_id, std::shared_ptr<game_server> > m_game_map;
+    con_set m_connections;
+    con_map m_player_connections;
+    std::map<player_id, std::shared_ptr<game_server> > m_player_games;
 
     std::map<player_id, connection_hdl> m_players;
     std::set<std::shared_ptr<game_server> > m_games;

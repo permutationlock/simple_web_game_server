@@ -412,43 +412,47 @@ public:
                 // consider using std::execution::par_unseq here !!
                 for(auto it = m_games.begin(); it != m_games.end();) {
                     std::shared_ptr<game_server> game = *it;
+
+                    // update the game state
                     if(game->update(delta_time.count())) {
                         // game is still going, move on
                         it++;
                     }
                     else {
+                        std::cout << "game ended" << std::endl;
+                        lock_guard<mutex> guard(m_player_lock);
+
                         // game has ended, erase it
-                        remove_game(game);
+                        std::vector<player_id> ids = game->get_player_ids();
+
+                        // iterate over player ids
+                        for(player_id id : ids) {
+                            connection_hdl hdl =
+                                game->get_player_data(id).connection;
+
+                            // close websocket connection
+                            websocketpp::lib::error_code ec;
+                            m_server.close(
+                                    hdl,
+                                    websocketpp::close::status::normal,
+                                    "", ec
+                                );
+
+                            if (ec) {
+                                std::cout << "error closing connection for player "
+                                    << id << ": "  << ec.message() << std::endl;
+                            }
+                            
+                            // erase the game entry for this player
+                            m_game_map.erase(id);
+                        }
+
                         it = m_games.erase(it);
                     }
                 }
             }
             std::this_thread::sleep_for(std::min(1ms, delta_time));
         }
-    }
-
-    // remove game entries for each player in game
-    // ASSUMES THAT m_game_lock HAS BEEN AQUIRED!!
-    void remove_game(shared_ptr<game_server> game) {
-        lock_guard<mutex> guard(m_player_lock);
-
-        // iterate over player ids in game
-        for(player_id id : game->get_player_ids()) {
-            player_data data = game->get_player_data(id);
-
-            std::cout << "erasing player " << id << "'s game" << std::endl;
-
-            // if the player is still connected, put them in the player list
-            if(data.status) {
-                std::cout << "adding player " << id << " back to player pool"
-                    << std::endl;
-                m_players[id] = data.connection;
-            }
-
-            // erase the entry in the game map
-            m_game_map.erase(id);
-        }
-        m_match_cond.notify_one();
     }
 
 private:
@@ -461,8 +465,6 @@ private:
 
     server m_server;
 
-    con_map m_player_map;
-    std::map<player_id, std::shared_ptr<game_server> > m_game_map;
     std::queue<action> m_actions;
 
     mutex m_action_lock;
@@ -472,6 +474,9 @@ private:
     condition_variable m_match_cond;
  
     con_list m_connections;
+    con_map m_player_map;
+    std::map<player_id, std::shared_ptr<game_server> > m_game_map;
+
     std::map<player_id, connection_hdl> m_players;
     std::set<std::shared_ptr<game_server> > m_games;
 };

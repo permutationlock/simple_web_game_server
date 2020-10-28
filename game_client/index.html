@@ -4,73 +4,110 @@
         <meta http-equiv="x-ua-compatible" content="ie=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <link rel="stylesheet" href="css/default.css">
         <script src="include/two.js"></script>
     </head>
 
     <body>
-        <div class="section" id="game"></div>
+        <input type="text" id="chat">
+        <button onclick="onButton()" id="login_button">send id</button> 
+        <div id="game"></div>
         <div class="scripts">
         <script>
-            var twoElement = document.getElementById('game');
-            var two = new Two({
-                fullscreen: true,
-                autostart: true
-            }).appendTo(twoElement);
-
-            var world = two.makeGroup();
-            world.translation.set(two.width / 2, two.height / 2);
-
             const socket = new WebSocket("ws://localhost:9090");
 
-            var height = 40, width = 40;
-            var box_height = 75, box_width = 75;
-            var start_x = -1*width*box_width/2.0,
-                start_y = -1*height*box_height/2.0;
-
-            for(var i=0; i < width; i++) {
-                for(var j=0; j < height; j++) {
-                    var rect = two.makeRectangle(
-                            start_x+i*box_width,
-                            start_y+j*box_height,
-                            box_width,
-                            box_height
-                        );
-                    world.add(rect);
-                }
-            }
-
-            window.addEventListener("click", function(event) {
-                var x = event.clientX;
-                var y = event.clientY;
-
-                var i = Math.floor((x-start_x+box_width/2.0)/box_width);
-                var j = Math.floor((y-start_y+box_height/2.0)/box_height);
-
-                console.log(i + ", " + j);
-
-                var mouseUpdate = {
-                    type: "rt_update",
-                    data: {
-                        x: i,
-                        y: j,
-                    },
-                };
-
-                socket.send(JSON.stringify(mouseUpdate));
-            });
-
             function onButton() {
-                var test = {};
-                test['message'] = document.getElementById('chat').value;
+                var test = {'data':{}};
+                test['data']['id'] =
+                    parseInt(document.getElementById('chat').value);
+                window.player_id = test['data']['id'];
                 socket.send(JSON.stringify(test));
                 console.log(JSON.stringify(test));
                 document.getElementById('chat').value = "";
-            }
 
-            socket.addEventListener('message', function (event) {
-                console.log('Message from server ', event.data);
-            });
+                document.getElementById('login_button').style.display = "none";
+                document.getElementById('chat').style.display = "none";
+
+                var twoElement = document.getElementById('game');
+                window.two = new Two({
+                    fullscreen: true,
+                    autostart: true
+                }).appendTo(twoElement);
+
+                var world = two.makeGroup();
+
+                var box_height = 75, box_width = 75;
+                var height = two.height/box_height, width =
+                    two.width/box_width;
+                var start_x = box_width/2.0,
+                    start_y = box_height/2.0;
+
+    
+                console.log("two width: " + two.width);
+                console.log("two height: " + two.height);
+
+                console.log("startx: " + start_x);
+                console.log("starty: " + start_y);
+                
+                var onClick = function(event) {
+                    var gameElement = document.getElementById("game");
+                    var x = event.clientX;
+                    var y = event.clientY;
+
+                    var i = Math.floor(x/box_width);
+                    var j = Math.floor(y/box_height);
+
+                    console.log(i + ", " + j);
+
+                    var mouseUpdate = {
+                        type: "rt_update",
+                        data: {
+                            x: i,
+                            y: j,
+                        },
+                    };
+
+                    socket.send(JSON.stringify(mouseUpdate));
+                };
+
+                for(var i=0; i < width; i++) {
+                    for(var j=0; j < height; j++) {
+                        var rect = two.makeRectangle(
+                                start_x+i*box_width,
+                                start_y+j*box_height,
+                                box_width,
+                                box_height
+                            );
+                        world.add(rect);
+                        two.update();
+                        rect.po_i = i;
+                        rect.po_j = j;
+
+                        rect._renderer.elem.addEventListener('click', onClick, false);
+                    }
+                }
+
+                window.circle1 = two.makeCircle(start_x, start_y, box_width/2.0);
+                window.circle1.stroke = "blue";
+
+                window.circle2 = two.makeCircle(start_x, start_y, box_width/2.0);
+                window.circle2.stroke = "red";
+
+                socket.addEventListener('message', function (event) {
+                    var data = JSON.parse(event.data);
+                    
+                    console.log('Message from server ', event.data);
+
+                    circle1.translation.set(
+                            data["data"][0]["x"]*box_width+start_x,
+                            data["data"][0]["y"]*box_height+start_y
+                        );
+                    circle2.translation.set(
+                            data["data"][1]["x"]*box_width+start_x,
+                            data["data"][1]["y"]*box_height+start_y
+                        );
+                    window.two.update();
+                });
+            }
         </script>
         </div>
     </body>

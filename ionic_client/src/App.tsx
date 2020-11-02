@@ -2,7 +2,6 @@ import React from 'react';
 import { Redirect, Route } from 'react-router-dom';
 import {
   IonApp,
-  IonIcon,
   IonLabel,
   IonRouterOutlet,
   IonTabBar,
@@ -10,7 +9,6 @@ import {
   IonTabs
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import { ellipse, square, triangle } from 'ionicons/icons';
 import Home from './pages/Home';
 import RuleBook from './pages/RuleBook';
 
@@ -33,13 +31,23 @@ import '@ionic/react/css/display.css';
 /* Theme variables */
 import './theme/variables.css';
 
+/* Websocket */
+
+var ws_path = 'ws://localhost:9090';
+var gsocket = new WebSocket(ws_path);
+
 const App: React.FC = () => (
   <IonApp>
     <IonReactRouter>
       <IonTabs>
         <IonRouterOutlet>
-          <Route path="/home" component={Home} exact={true} />
-          <Route path="/rulebook" component={RuleBook} />
+          <Route path="/home" exact={true}
+            render={(props) => ( <Home {...props} socket={gsocket} /> )}/>
+          <Route path="/rulebook/:rule"
+            render={(props) => ( <RuleBook {...props} root={false} /> )} />
+          <Route path="/rulebook/" exact={true}
+            render={(props) => ( <RuleBook {...props} root={true} /> )} />
+
           <Route exact path="/" render={() => <Redirect to="/home" />} />
         </IonRouterOutlet>
         <IonTabBar slot="bottom">

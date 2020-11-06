@@ -3,28 +3,37 @@ import React, { Component } from "react";
 import { RouteComponentProps } from "react-router";
 import './RuleBook.css';
 
-class RuleBook extends Component<RouteComponentProps, {}> {
-    
-    componentDidMount() {
-        var gl_element = document.getElementById("rulebook")!;
-        gl_element.innerHTML = this.props.match.path;
-        console.log(this.props.match);
-    }
+type RuleBookParams = { rule : string };
 
-    render() {
-        return (
-            <IonPage>
-              <IonHeader>
-                <IonToolbar>
-                  <IonTitle>Rule Book</IonTitle>
-                </IonToolbar>
-              </IonHeader>
-              <IonContent fullscreen>
-                <div id="rulebook"></div>
-              </IonContent>
-            </IonPage>
-        )
+type RuleBookProps = { root : boolean } & RouteComponentProps<RuleBookParams>;
+
+type RuleBookState = {};
+
+class RuleBook extends Component<RuleBookProps, RuleBookState> {
+  componentDidMount() {
+    var gl_element = document.getElementById("rulebook")!;
+    if(this.props.root) {
+      gl_element.innerHTML = "root";
+    } else {
+      gl_element.innerHTML = this.props.match.params.rule;
     }
+    console.log(this.props.match.params.rule);
+  }
+
+  render() {
+    return (
+      <IonPage>
+        <IonHeader>
+          <IonToolbar>
+            <IonTitle>Rule Book</IonTitle>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent fullscreen>
+          <div id="rulebook"></div>
+        </IonContent>
+      </IonPage>
+    )
+  }
 }
 
 export default RuleBook;

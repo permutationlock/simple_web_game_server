@@ -26,6 +26,11 @@ class Game extends Component<GameProps, GameState> {
         var material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
         var cube = new THREE.Mesh(geometry, material);
 
+        var gridXZ = new THREE.GridHelper(100, 10);
+	gridXZ.setColors( new THREE.Color(0x006600), new THREE.Color(0x006600) );
+	gridXZ.position.set( 100,0,100 );
+	scene.add(gridXZ);
+
         scene.add(cube);
         camera.position.z = 5;
 

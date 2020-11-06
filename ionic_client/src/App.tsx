@@ -9,7 +9,7 @@ import {
   IonTabs
 } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import Home from './pages/Home';
+import Game from './pages/Game';
 import RuleBook from './pages/RuleBook';
 
 /* Core CSS required for Ionic components to work properly */
@@ -31,8 +31,6 @@ import '@ionic/react/css/display.css';
 /* Theme variables */
 import './theme/variables.css';
 
-/* Websocket */
-
 var ws_path = 'ws://localhost:9090';
 var gsocket = new WebSocket(ws_path);
 
@@ -41,18 +39,18 @@ const App: React.FC = () => (
     <IonReactRouter>
       <IonTabs>
         <IonRouterOutlet>
-          <Route path="/home" exact={true}
-            render={(props) => ( <Home {...props} socket={gsocket} /> )}/>
+          <Route path="/game" exact={true}
+            render={(props) => ( <Game {...props} socket={gsocket} /> )}/>
           <Route path="/rulebook/:rule"
             render={(props) => ( <RuleBook {...props} root={false} /> )} />
           <Route path="/rulebook/" exact={true}
             render={(props) => ( <RuleBook {...props} root={true} /> )} />
 
-          <Route exact path="/" render={() => <Redirect to="/home" />} />
+          <Route exact path="/" render={() => <Redirect to="/game" />} />
         </IonRouterOutlet>
         <IonTabBar slot="bottom">
-          <IonTabButton tab="home" href="/home">
-            <IonLabel>Home</IonLabel>
+          <IonTabButton tab="game" href="/game">
+            <IonLabel>Game</IonLabel>
           </IonTabButton>
           <IonTabButton tab="rules" href="/rulebook">
             <IonLabel>Rules</IonLabel>

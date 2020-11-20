@@ -1,5 +1,5 @@
 CXX      = g++
-CXXFLAGS = -O0 -Wall -Wno-unused-result -pthread
+CXXFLAGS = -O0 -Wall -Wno-unused-result -pthread -lboost_log
 INCLUDES = -Iinclude
 
 TARGET = game_server

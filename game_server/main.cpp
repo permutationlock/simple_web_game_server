@@ -2,7 +2,8 @@
 #include <functional>
 #include <spdlog/spdlog.h>
 
-#include "tic_tac_toe_server.hpp"
+#include "game_server.hpp"
+#include "tic_tac_toe_game.hpp"
 
 using json = nlohmann::json;
 
@@ -10,7 +11,7 @@ typedef main_server<tic_tac_toe_game> ttt_server;
 
 int main() {
     // log level
-    spdlog::set_level(spdlog::level::debug);
+    spdlog::set_level(spdlog::level::trace);
 
     // create our main server to manage player connection and matchmaking
     ttt_server gs;

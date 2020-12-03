@@ -8,8 +8,6 @@
 #include "game_server.hpp"
 #include "tic_tac_toe_game.hpp"
 
-using json = nlohmann::json;
-
 // json traits to use nlohmann json library with jwt-cpp
 struct nlohmann_traits {
   using json = nlohmann::json;
@@ -91,7 +89,8 @@ struct nlohmann_traits {
   static std::string serialize(const json &val) { return val.dump(); }
 };
 
-typedef main_server<tic_tac_toe_game, jwt::default_clock, nlohmann_traits>
+typedef jwt_game_server::
+  game_server<tic_tac_toe_game, jwt::default_clock, nlohmann_traits>
   ttt_server;
 
 int main() {

@@ -5,7 +5,7 @@
 #define DISABLE_PICOJSON
 #include <jwt-cpp/jwt.h>
 
-#include "game_server.hpp"
+#include <jwt_game_server/game_server.hpp>
 #include "tic_tac_toe_game.hpp"
 
 // json traits to use nlohmann json library with jwt-cpp

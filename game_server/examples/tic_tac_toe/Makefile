@@ -1,6 +1,6 @@
 CXX      = g++
-CXXFLAGS = -O0 -Wall -Wno-unused-result -pthread -lboost_log
-INCLUDES = -Iinclude
+CXXFLAGS = -O0 -Wall -Wno-unused-result -pthread -lboost_log -lssl -lcrypto
+INCLUDES = -I../../include
 
 TARGET = game_server
 SRCS   = main.cpp

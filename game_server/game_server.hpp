@@ -4,9 +4,6 @@
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
 
-#include <nlohmann/json.hpp>
-
-#define DISABLE_PICOJSON
 #include <jwt-cpp/jwt.h>
 
 #include <spdlog/spdlog.h>
@@ -20,9 +17,6 @@
 using namespace std::chrono_literals;
 
 using websocketpp::connection_hdl;
-
-// Define JSON type
-using json = nlohmann::json;
 
 // Define functional types
 using std::bind;
@@ -67,88 +61,7 @@ struct action {
   server::message_ptr msg;
 };
 
-// json traits to use nlohmann json library with jwt-cpp
-struct nlohmann_traits {
-  using json = nlohmann::json;
-  using value_type = json;
-  using object_type = json::object_t;
-  using array_type = json::array_t;
-  using string_type = std::string;
-  using number_type = json::number_float_t;
-  using integer_type = json::number_integer_t;
-  using boolean_type = json::boolean_t;
-
-  static jwt::json::type get_type(const json &val) {
-    using jwt::json::type;
-
-    if (val.type() == json::value_t::boolean)
-      return type::boolean;
-    else if (val.type() == json::value_t::number_integer)
-      return type::integer;
-    else if (val.type() == json::value_t::number_unsigned)
-      return type::integer;
-    else if (val.type() == json::value_t::number_float)
-      return type::number;
-    else if (val.type() == json::value_t::string)
-      return type::string;
-    else if (val.type() == json::value_t::array)
-      return type::array;
-    else if (val.type() == json::value_t::object)
-      return type::object;
-    else
-      throw std::logic_error("invalid type");
-  }
-
-  static json::object_t as_object(const json &val) {
-    if (val.type() != json::value_t::object)
-      throw std::bad_cast();
-    return val.get<json::object_t>();
-  }
-
-  static std::string as_string(const json &val) {
-    if (val.type() != json::value_t::string)
-      throw std::bad_cast();
-    return val.get<std::string>();
-  }
-
-  static json::array_t as_array(const json &val) {
-    if (val.type() != json::value_t::array)
-      throw std::bad_cast();
-    return val.get<json::array_t>();
-  }
-
-  static int64_t as_int(const json &val) {
-    switch(val.type())
-    {
-      case json::value_t::number_integer:
-      case json::value_t::number_unsigned:
-        return val.get<int64_t>();
-      default:  
-        throw std::bad_cast();
-    }
-  }
-
-  static bool as_bool(const json &val) {
-    if (val.type() != json::value_t::boolean)
-      throw std::bad_cast();
-    return val.get<bool>();
-  }
-
-  static double as_number(const json &val) {
-    if (val.type() != json::value_t::number_float)
-      throw std::bad_cast();
-    return val.get<double>();
-  }
-
-  static bool parse(json &val, std::string str) {
-    val = json::parse(str.begin(), str.end());
-    return true;
-  }
-
-  static std::string serialize(const json &val) { return val.dump(); }
-};
-
-template<typename game_data>
+template<typename game_data, typename json_traits>
 class game_server {
 public:
   typedef typename game_data::player_id player_id;
@@ -185,16 +98,18 @@ public:
 
   void process_player_update(player_id id, const std::string& text) {  
     spdlog::trace("player_update called for player {}", id);
-    json msg_json = json::parse(text, nullptr, false);
+    typename json_traits::json msg_json;
 
-    if(msg_json.is_discarded()) {
+    try {
+      json_traits::parse(msg_json, text);
+    } catch(std::exception& e) {
       spdlog::debug("update message from {} was not valid json", id);
       return;
-    } else {
-      lock_guard<mutex> guard(m_game_lock);
-      m_game.player_update(id, msg_json);
-      send_messages();
     }
+
+    lock_guard<mutex> guard(m_game_lock);
+    m_game.player_update(id, msg_json);
+    send_messages();
   }
   
   // update game every timestep, return false if game is over
@@ -266,14 +181,10 @@ private:
   game_data m_game;
 };
 
-template<typename game_data>
+template<typename game_data, typename jwt_clock, typename json_traits>
 class main_server {
 public:
-  main_server() : m_jwt_verifier(jwt::default_clock{}) {
-    // setup jwt verifier
-    m_jwt_verifier.allow_algorithm(jwt::algorithm::hs256("passwd"))
-      .with_issuer("krynth");
-
+  main_server(const jwt::verifier<jwt_clock, json_traits>& v) : m_jwt_verifier(v) {
     // initialize Asio Transport
     m_server.init_asio();
 
@@ -294,7 +205,7 @@ public:
     // start the ASIO io_service run loop
     try {
       m_server.run();
-    } catch (const std::exception & e) {
+    } catch (std::exception & e) {
       spdlog::debug(e.what());
     }
   }
@@ -328,10 +239,10 @@ public:
   }
 
   void setup_player(connection_hdl hdl, const std::string& token) {
-    json login_json;
+    typename json_traits::json login_json;
     try {
-      jwt::decoded_jwt<nlohmann_traits> decoded_token =
-        jwt::decode<nlohmann_traits>(token);
+      jwt::decoded_jwt<json_traits> decoded_token =
+        jwt::decode<json_traits>(token);
       auto claim_map = decoded_token.get_payload_claims();
       login_json = claim_map.at("game_data").to_json();
       m_jwt_verifier.verify(decoded_token);
@@ -422,7 +333,8 @@ public:
     lock_guard<mutex> game_guard(m_game_list_lock);
     player_id main_id = data.get_creator_id();
     if(m_player_games.count(main_id)<1) {
-      auto gs = make_shared<game_server<game_data> >(&m_server, data);
+      auto gs =
+        make_shared<game_server<game_data, json_traits> >(&m_server, data);
       m_games.insert(gs);
 
       for(player_id id : data.get_player_list()) {
@@ -474,7 +386,7 @@ public:
         
         // consider using std::execution::par_unseq here !!
         for(auto it = m_games.begin(); it != m_games.end();) {
-          shared_ptr<game_server<game_data> > game = *it;
+          shared_ptr<game_server<game_data, json_traits> > game = *it;
 
           if(game->game_update(delta_time.count())) {
             it++;
@@ -520,11 +432,12 @@ private:
   queue<action> m_actions;
  
   con_map m_connection_ids;
-  map<player_id, shared_ptr<game_server<game_data> > > m_player_games;
+  map<player_id, shared_ptr<game_server<game_data, json_traits> > >
+    m_player_games;
 
-  set<shared_ptr<game_server<game_data> > > m_games;
+  set<shared_ptr<game_server<game_data, json_traits> > > m_games;
 
-  jwt::verifier<jwt::default_clock, nlohmann_traits> m_jwt_verifier;
+  jwt::verifier<jwt_clock, json_traits> m_jwt_verifier;
 };
 
 #endif // GAME_SERVER_HPP

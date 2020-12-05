@@ -21,7 +21,14 @@ using std::queue;
 
 class tic_tac_toe_game {
 public:
-  typedef unsigned long player_id;
+  struct player_traits {
+    typedef unsigned long player_id;
+    static player_id parse_id(const json& id_json) {
+      return id_json.get<player_id>();
+    }
+  };
+
+  typedef player_traits::player_id player_id;
 
   struct message {
     message(bool b, player_id i, const std::string& t) : broadcast(b),
@@ -38,7 +45,6 @@ public:
     spdlog::trace(msg.dump());
 
     try {
-      m_creator_id = msg.at("creator_id").get<player_id>();
       m_player_list = msg.at("players").get<vector<player_id> >();
     } catch(json::exception& e) {
       m_valid=false;
@@ -112,10 +118,6 @@ public:
     return m_player_list;
   }
 
-  player_id get_creator_id() const {
-    return m_creator_id;
-  }
-
   bool has_message() const {
     return !m_message_queue.empty();
   }
@@ -148,7 +150,6 @@ private:
     bool is_connected;
   };
 
-  player_id m_creator_id;
   vector<player_id> m_player_list;
   map<player_id, player_data> m_data_map;
 

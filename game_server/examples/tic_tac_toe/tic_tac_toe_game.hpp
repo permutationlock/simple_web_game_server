@@ -19,15 +19,16 @@ using std::map;
 using std::pair;
 using std::queue;
 
+struct tic_tac_toe_player_traits {
+  typedef unsigned long player_id;
+  static player_id parse_id(const json& id_json) {
+    return id_json.get<player_id>();
+  }
+};
+
 class tic_tac_toe_game {
 public:
-  struct player_traits {
-    typedef unsigned long player_id;
-    static player_id parse_id(const json& id_json) {
-      return id_json.get<player_id>();
-    }
-  };
-
+  typedef tic_tac_toe_player_traits player_traits;
   typedef player_traits::player_id player_id;
 
   struct message {
@@ -161,6 +162,56 @@ private:
   unsigned int m_turn;
   long m_elapsed_time;
   unsigned int turn;
+};
+
+class tic_tac_toe_matchmaking_data {
+public: 
+  typedef tic_tac_toe_player_traits player_traits;
+  typedef tic_tac_toe_player_traits::player_id player_id;
+
+  class player_data {
+  public:
+    player_data() {}
+    player_data(const json& data) {}
+  };
+
+  class game {
+  public:
+    bool add_player(player_id id) {
+      player_list.push_back(id);
+      return (player_list.size() > 1);
+    }
+
+    json dump() {
+      json game_json;
+
+      for(auto& id : player_list) {
+        game_json["players"].push_back(id);  
+      }
+
+      return game_json;
+    }
+
+    const vector<player_id>& get_player_list() {
+      return player_list;
+    }
+
+  private:
+    vector<player_id> player_list;
+  };
+
+  static vector<game> match(const map<player_id, player_data>& player_map) {
+    vector<game> game_list;
+    game g;
+    for(auto const& player : player_map) {
+      if(g.add_player(player.first)) {
+        game_list.push_back(g);
+        g = game{};
+      }
+    }
+
+    return game_list;
+  }
 };
 
 #endif // TIC_TAC_TOE_HPP

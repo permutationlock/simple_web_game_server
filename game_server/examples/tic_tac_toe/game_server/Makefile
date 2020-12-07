@@ -1,9 +1,9 @@
 CXX      = g++
 CXXFLAGS = -O0 -Wall -Wno-unused-result -pthread -lboost_log -lssl -lcrypto
-INCLUDES = -I../../include
+INCLUDES = -I../../../include
 
 TARGET = game_server
-SRCS   = main.cpp
+SRCS   = game_server.cpp
 OBJS   = $(SRCS:.cpp=.o)
 DEPS   = $(SRCS:.cpp=.depends)
 

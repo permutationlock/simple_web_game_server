@@ -142,6 +142,7 @@ namespace jwt_game_server {
       }
     }
 
+  protected:
     virtual void process_message(player_id, const std::string& text) {
       spdlog::trace("  \'{}\'", text);
     }
@@ -153,15 +154,15 @@ namespace jwt_game_server {
       spdlog::debug("player {} connected", id);
     }
 
-    virtual void player_disconnect(connection_hdl hdl) {
+    virtual player_id player_disconnect(connection_hdl hdl) {
       lock_guard<mutex> connection_guard(m_connection_lock);
       player_id id = m_connection_ids[hdl];
       m_connection_ids.erase(hdl);
 
       spdlog::debug("player {} disconnected", id);
+      return id;
     }
 
-  protected:
     typedef map<
         connection_hdl,
         player_id,

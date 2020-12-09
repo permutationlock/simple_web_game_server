@@ -28,16 +28,6 @@ namespace jwt_game_server {
     map<player_id, connection_hdl> m_id_connections;
     map<player_id, player_data> m_player_data;
 
-  public:
-    matchmaking_server(const jwt::verifier<jwt_clock, json_traits>& v)
-      : base_server<typename matchmaking_data::player_traits, jwt_clock,
-        json_traits>(v), m_timestep(500ms) {}
-
-    matchmaking_server(const jwt::verifier<jwt_clock, json_traits>& v,
-      std::chrono::milliseconds t)
-      : base_server<typename matchmaking_data::player_traits, jwt_clock,
-        json_traits>(v), m_timestep(t) {}
-
     void process_message(player_id id, const std::string& text) {
       super::process_message(id, text);
     }
@@ -68,6 +58,16 @@ namespace jwt_game_server {
       super::player_disconnect(hdl);
     }
 
+  public:
+    matchmaking_server(const jwt::verifier<jwt_clock, json_traits>& v)
+      : base_server<typename matchmaking_data::player_traits, jwt_clock,
+        json_traits>(v), m_timestep(500ms) {}
+
+    matchmaking_server(const jwt::verifier<jwt_clock, json_traits>& v,
+      std::chrono::milliseconds t)
+      : base_server<typename matchmaking_data::player_traits, jwt_clock,
+        json_traits>(v), m_timestep(t) {}
+
     void match_players() {
       auto time_start = std::chrono::high_resolution_clock::now();
       while(1) {
@@ -89,7 +89,7 @@ namespace jwt_game_server {
             = matchmaking_data::match(m_player_data);
 
           for(auto game : games) {
-            std::string text = game.dump();
+            std::string text = (game.to_json()).dump();
             spdlog::debug("matched game with the following players:");
             for(player_id id : game.get_player_list()) {
               connection_hdl hdl = m_id_connections[id];

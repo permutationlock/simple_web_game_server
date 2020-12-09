@@ -148,16 +148,6 @@ namespace jwt_game_server {
       m_player_games;
     set<shared_ptr<game_instance<game_data, json_traits> > > m_games;
 
-  public:
-    game_server(const jwt::verifier<jwt_clock, json_traits>& v)
-      : base_server<typename game_data::player_traits, jwt_clock,
-        json_traits>(v), m_timestep(500ms) {}
-
-    game_server(const jwt::verifier<jwt_clock, json_traits>& v,
-      std::chrono::milliseconds t)
-      : base_server<typename game_data::player_traits, jwt_clock,
-        json_traits>(v), m_timestep(t) {}
-
     void process_message(player_id id, const std::string& text) {
       m_player_games[id]->process_player_update(id, text);
       super::process_message(id, text);
@@ -190,6 +180,7 @@ namespace jwt_game_server {
           lock_guard<mutex> connection_guard(super::m_connection_lock);
           connection_hdl hdl =
             m_player_games[main_id]->get_connection(main_id);
+          m_player_games[main_id]->disconnect(main_id);
           super::m_connection_ids.erase(hdl);
           super::m_server.close(
               hdl,
@@ -203,20 +194,25 @@ namespace jwt_game_server {
       }
     }
 
-    void player_disconnect(connection_hdl hdl) {
-      player_id id;
-      {
-        lock_guard<mutex> connection_guard(super::m_connection_lock);
-        id = super::m_connection_ids[hdl];
-      }
+    player_id player_disconnect(connection_hdl hdl) {
+      player_id id = super::player_disconnect(hdl);
       {
         lock_guard<mutex> game_guard(m_game_list_lock);
         m_player_games[id]->disconnect(id);
         m_player_games.erase(id);
       }
-      
-      super::player_disconnect(hdl);
+      return id;
     }
+
+  public:
+    game_server(const jwt::verifier<jwt_clock, json_traits>& v)
+      : base_server<typename game_data::player_traits, jwt_clock,
+        json_traits>(v), m_timestep(500ms) {}
+
+    game_server(const jwt::verifier<jwt_clock, json_traits>& v,
+      std::chrono::milliseconds t)
+      : base_server<typename game_data::player_traits, jwt_clock,
+        json_traits>(v), m_timestep(t) {}
 
     void update_games() {
       auto time_start = std::chrono::high_resolution_clock::now();

@@ -6,7 +6,8 @@
 #include <jwt-cpp/jwt.h>
 
 #include <jwt_game_server/game_server.hpp>
-#include "../json_traits.hpp"
+#include <json_traits/nlohmann_traits.hpp>
+
 #include "../tic_tac_toe_game.hpp"
 
 typedef jwt_game_server::

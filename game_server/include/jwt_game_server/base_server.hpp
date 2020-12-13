@@ -33,23 +33,6 @@ namespace jwt_game_server {
   // websocket server type
   typedef websocketpp::server<websocketpp::config::asio> wss_server;
 
-  // on_message action for the server
-  enum action_type {
-    SUBSCRIBE,
-    UNSUBSCRIBE,
-    MESSAGE
-  };
-
-  struct action {
-    action(action_type t, connection_hdl h) : type(t), hdl(h) {}
-    action(action_type t, connection_hdl h, wss_server::message_ptr m)
-      : type(t), hdl(h), msg(m) {}
-
-    action_type type;
-    connection_hdl hdl;
-    wss_server::message_ptr msg;
-  };
-
   template<typename player_traits, typename jwt_clock, typename json_traits>
   class base_server {
   public:
@@ -177,6 +160,23 @@ namespace jwt_game_server {
   private:
     mutex m_action_lock;
     condition_variable m_action_cond;
+
+    // on_message action for the server
+    enum action_type {
+      SUBSCRIBE,
+      UNSUBSCRIBE,
+      MESSAGE
+    };
+
+    struct action {
+      action(action_type t, connection_hdl h) : type(t), hdl(h) {}
+      action(action_type t, connection_hdl h, wss_server::message_ptr m)
+        : type(t), hdl(h), msg(m) {}
+
+      action_type type;
+      connection_hdl hdl;
+      wss_server::message_ptr msg;
+    };
 
     queue<action> m_actions;   
 

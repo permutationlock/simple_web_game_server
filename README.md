@@ -1,9 +1,8 @@
-### OnlineTactics.js
+### JWT Game Server
 
-A turn based tactical multiplayer game engine built on c++ and javascript.
+This project provides simple generic C++ classes to create game servers and
+matchmaking servers using WebSockets and JWT authentication.
 
-#### Current state:
-
-Client: a simple Ionic React client with login page, placeholder login token submission, placeholder three.js game scene, and placeholder rule encyclopedia page.
-
-Server: multithreaded websocket game server with simple matchmaking, game state tracking, game update loop. Simple user id layer between connections and games allows players to disconnect and reconnect to the same game.
+In order to create a backend for your game all you need to write is code
+describing the game logic and matchmaking algorithm, the networking and
+authentication is handled by the library; see examples.

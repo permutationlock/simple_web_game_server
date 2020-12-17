@@ -8,42 +8,65 @@
 
 #include <spdlog/spdlog.h>
 
+#include <atomic>
 #include <mutex>
 #include <condition_variable>
 
 namespace jwt_game_server {
+  // websocketpp types
   using websocketpp::connection_hdl;
 
-  // Define functional types
+  // functional types
   using std::bind;
   using std::placeholders::_1;
   using std::placeholders::_2;
 
-  // Define data type implementations
+  // datatype implementations
   using std::vector;
   using std::map;
   using std::queue;
 
-  // Define threading type implementations
+  // threading type implementations
+  using std::atomic;
   using std::mutex;
   using std::lock_guard;
   using std::unique_lock;
   using std::condition_variable;
 
-  // websocket server type
-  typedef websocketpp::server<websocketpp::config::asio> wss_server;
-
-  template<typename player_traits, typename jwt_clock, typename json_traits>
+  template<typename player_traits, typename jwt_clock, typename json_traits,
+    typename server_config>
   class base_server {
-  public:
+  // type definitions
+  protected:
     typedef typename player_traits::player_id player_id;
     typedef typename json_traits::json json;
 
-    base_server(const jwt::verifier<jwt_clock, json_traits>& v) : m_jwt_verifier(v) {
-      // initialize Asio Transport
+  private:
+    enum action_type {
+      SUBSCRIBE,
+      UNSUBSCRIBE,
+      MESSAGE
+    };
+
+    typedef websocketpp::server<server_config> ws_server;
+    typedef typename ws_server::message_ptr message_ptr;
+
+    struct action {
+      action(action_type t, connection_hdl h) : type(t), hdl(h) {}
+      action(action_type t, connection_hdl h, message_ptr m)
+        : type(t), hdl(h), msg(m) {}
+
+      action_type type;
+      connection_hdl hdl;
+      message_ptr msg;
+    };
+
+  // main class body
+  public:
+    base_server(const jwt::verifier<jwt_clock, json_traits>& v)
+        : m_jwt_verifier(v) {
       m_server.init_asio();
 
-      // register handler callbacks
       m_server.set_open_handler(bind(&base_server::on_open, this,
         jwt_game_server::_1));
       m_server.set_close_handler(bind(&base_server::on_close, this,
@@ -55,26 +78,51 @@ namespace jwt_game_server {
     }
 
     void run(uint16_t port) {
-      // listen on specified port
-      m_server.listen(port);
+      m_is_running = true;
 
-      // start the server accept loop
+      m_server.listen(port);
       m_server.start_accept();
 
-      // start the ASIO io_service run loop
       try {
         m_server.run();
-      } catch (std::exception & e) {
-        spdlog::debug(e.what());
+      } catch (std::exception& e) {
+        spdlog::debug("error starting server: {}", e.what());
       }
     }
 
+    bool is_running() {
+      return m_is_running;
+    }
+
+    void stop() {
+      lock_guard<mutex> guard(m_connection_lock);
+      m_is_running = false;
+      m_server.stop_listening();
+
+      for(auto& con_pair : m_connection_ids) {
+        connection_hdl hdl = con_pair.first;
+        try {
+          m_server.close(
+              hdl,
+              websocketpp::close::status::normal,
+              "server shutdown"
+            );
+        } catch (std::exception& e) {
+          spdlog::error("error closing connection: {}", e.what());
+        }
+      }
+      m_action_cond.notify_all();
+    }
+
     void process_messages() {
-      while(1) {
+      while(m_is_running) {
         unique_lock<mutex> action_lock(m_action_lock);
 
         while(m_actions.empty()) {
           m_action_cond.wait(action_lock);
+          if(!m_is_running) {
+            return;
+          }
         }
 
         action a = m_actions.front();
@@ -125,7 +173,25 @@ namespace jwt_game_server {
       }
     }
 
+    std::size_t get_player_count() {
+      lock_guard<mutex> guard(m_connection_lock);
+      return m_connection_ids.size();
+    }
+
   protected:
+    void close_connection(connection_hdl hdl, const std::string& reason) {
+      lock_guard<mutex> guard(m_connection_lock);
+        try {
+          m_server.close(
+              hdl,
+              websocketpp::close::status::normal,
+              reason
+            );
+        } catch (std::exception& e) {
+          spdlog::error("error closing connection: {}", e.what());
+        }
+    }
+
     virtual void process_message(player_id, const std::string& text) {
       spdlog::trace("  \'{}\'", text);
     }
@@ -146,40 +212,19 @@ namespace jwt_game_server {
       return id;
     }
 
-    typedef map<
+    // member variables
+    ws_server m_server;
+    mutex m_connection_lock;
+    map<
         connection_hdl,
         player_id,
         std::owner_less<connection_hdl>
-      > con_map;
-
-    wss_server m_server;
-    mutex m_connection_lock;
-    con_map m_connection_ids;
+      > m_connection_ids;
     jwt::verifier<jwt_clock, json_traits> m_jwt_verifier;
 
+    atomic<bool> m_is_running;
+
   private:
-    mutex m_action_lock;
-    condition_variable m_action_cond;
-
-    // on_message action for the server
-    enum action_type {
-      SUBSCRIBE,
-      UNSUBSCRIBE,
-      MESSAGE
-    };
-
-    struct action {
-      action(action_type t, connection_hdl h) : type(t), hdl(h) {}
-      action(action_type t, connection_hdl h, wss_server::message_ptr m)
-        : type(t), hdl(h), msg(m) {}
-
-      action_type type;
-      connection_hdl hdl;
-      wss_server::message_ptr msg;
-    };
-
-    queue<action> m_actions;   
-
     void on_open(connection_hdl hdl) {
       {
         lock_guard<mutex> guard(m_action_lock);
@@ -198,7 +243,7 @@ namespace jwt_game_server {
       m_action_cond.notify_one();
     }
 
-    void on_message(connection_hdl hdl, wss_server::message_ptr msg) {
+    void on_message(connection_hdl hdl, message_ptr msg) {
       {
         lock_guard<mutex> guard(m_action_lock);
         spdlog::trace("on_message: {}", msg->get_payload());
@@ -235,6 +280,12 @@ namespace jwt_game_server {
         this->player_connect(hdl, id, login_json);
       }
     }
+
+    // member functions
+    mutex m_action_lock;
+    condition_variable m_action_cond;
+
+    queue<action> m_actions;
   };
 }
 

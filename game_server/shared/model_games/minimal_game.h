@@ -43,17 +43,13 @@ public:
     }
   }
   
-  void connect(player_id id) {
-  }
+  void connect(player_id id) {}
 
-  void disconnect(player_id id) {
-  }
+  void disconnect(player_id id) {}
 
-  void player_update(player_id id, const json& data) {
-  }
+  void player_update(player_id id, const json& data) {}
 
-  void game_update(long delta_time) {
-  }
+  void game_update(long delta_time) {}
 
   bool is_done() const {
     return true;

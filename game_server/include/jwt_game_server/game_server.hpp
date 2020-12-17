@@ -7,20 +7,24 @@
 #include <chrono>
 
 namespace jwt_game_server {
-  // Time literals to initialize timestep variables
+  // time literals to initialize timestep variables
   using namespace std::chrono_literals;
 
-  // Define data type implementations
+  // datatype implementations
   using std::set;
   using std::shared_ptr;
   using std::make_shared;
 
-  template<typename game_data, typename json_traits>
+  template<typename game_data, typename json_traits, typename server_config>
   class game_instance {
-  public:
+  // type definitions
+  private:
+    typedef websocketpp::server<server_config> ws_server;
     typedef typename game_data::player_id player_id;
 
-    game_instance(wss_server* s, const game_data& data) :
+  // main class body
+  public:
+    game_instance(ws_server* s, const game_data& data) :
       m_server_ptr(s), m_game(data)  {}
 
     void connect(player_id id, connection_hdl hdl) {
@@ -91,8 +95,17 @@ namespace jwt_game_server {
         player_id id = player.first;
         connection_hdl hdl = player.second;
         if(m_player_status[id]) {
-          m_server_ptr->send(hdl, text,
+          try {
+            m_server_ptr->send(hdl, text,
               websocketpp::frame::opcode::text);
+          } catch (std::exception& e) {
+            spdlog::debug(
+                "error sending message ({}) to id: {}, with error: {}",
+                text,
+                id,
+                e.what()
+              );
+          }
         }
       }
     }
@@ -100,11 +113,20 @@ namespace jwt_game_server {
     bool send(player_id id, const std::string& text) {
       bool success = true;
       if(m_player_status[id]) {
-        m_server_ptr->send(
-            m_player_connections[id],
-            text,
-            websocketpp::frame::opcode::text
-          );
+        try {
+          m_server_ptr->send(
+              m_player_connections[id],
+              text,
+              websocketpp::frame::opcode::text
+            );
+        } catch (std::exception& e) {
+            spdlog::debug(
+                "error sending message ({}) to id: {}, with error: {}",
+                text,
+                id,
+                e.what()
+              );
+        }
       } else {
         success = false;
       }
@@ -124,30 +146,69 @@ namespace jwt_game_server {
       }
     }
 
-    wss_server* m_server_ptr;
+    // member variables
+    ws_server* m_server_ptr;
     map<player_id, connection_hdl> m_player_connections;
     map<player_id, bool> m_player_status;
     mutex m_game_lock;
     game_data m_game;
   };
 
-  template<typename game_data, typename jwt_clock, typename json_traits>
+  template<typename game_data, typename jwt_clock, typename json_traits,
+    typename server_config>
   class game_server : public base_server<typename game_data::player_traits,
-      jwt_clock, json_traits> {
+      jwt_clock, json_traits, server_config> {
+  // type definitions
   private:
     typedef base_server<typename game_data::player_traits, jwt_clock,
-      json_traits> super;
+      json_traits, server_config> super;
     typedef typename super::player_id player_id;
     typedef typename super::json json;
 
-    std::chrono::milliseconds m_timestep;
+  // main class body
+  public:
+    game_server(const jwt::verifier<jwt_clock, json_traits>& v)
+      : super(v), m_timestep(500ms) {}
 
-    mutex m_game_list_lock;
+    game_server(const jwt::verifier<jwt_clock, json_traits>& v,
+      std::chrono::milliseconds t)
+        : super(v), m_timestep(t) {}
 
-    map<player_id, shared_ptr<game_instance<game_data, json_traits> > >
-      m_player_games;
-    set<shared_ptr<game_instance<game_data, json_traits> > > m_games;
+    void update_games() {
+      auto time_start = std::chrono::high_resolution_clock::now();
+      while(super::m_is_running) { 
+        auto delta_time =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - time_start);
+        if(delta_time >= m_timestep) {
+          lock_guard<mutex> game_guard(m_game_list_lock);
+          time_start = std::chrono::high_resolution_clock::now();
+          
+          // consider using std::execution::par_unseq here !!
+          for(auto it = m_games.begin(); it != m_games.end();) {
+            shared_ptr<
+                game_instance<game_data, json_traits, server_config>
+              > game = *it;
 
+            if(game->game_update(delta_time.count())) {
+              it++;
+            } else {
+              spdlog::debug("game ended");
+              vector<player_id> ids(game->get_player_list());
+              for(player_id id : ids) {
+                connection_hdl hdl = game->get_connection(id);
+                super::close_connection(hdl, "game ended");
+              }
+              spdlog::trace("erasing game from list");
+              it = m_games.erase(it);
+            }
+          }
+        }
+        std::this_thread::sleep_for(std::min(1ms, m_timestep-delta_time));
+      }
+    }
+
+  private:
     void process_message(player_id id, const std::string& text) {
       m_player_games[id]->process_player_update(id, text);
       super::process_message(id, text);
@@ -166,8 +227,9 @@ namespace jwt_game_server {
 
       lock_guard<mutex> game_guard(m_game_list_lock);
       if(m_player_games.count(main_id)<1) {
-        auto gs =
-          make_shared<game_instance<game_data, json_traits> >(&(super::m_server), d);
+        auto gs = make_shared<
+            game_instance<game_data, json_traits, server_config>
+          >(&(super::m_server), d);
         m_games.insert(gs);
 
         for(player_id id : d.get_player_list()) {
@@ -177,16 +239,13 @@ namespace jwt_game_server {
         m_player_games[main_id]->connect(main_id, hdl);
       } else {
         if(m_player_games[main_id]->is_connected(main_id)) {
-          lock_guard<mutex> connection_guard(super::m_connection_lock);
+          m_player_games[main_id]->disconnect(main_id);
           connection_hdl hdl =
             m_player_games[main_id]->get_connection(main_id);
-          m_player_games[main_id]->disconnect(main_id);
-          super::m_connection_ids.erase(hdl);
-          super::m_server.close(
-              hdl,
-              websocketpp::close::status::normal,
-              "player connected again"
-            );
+          super::player_disconnect(hdl);
+          
+          super::close_connection(hdl, "player opened redundant connection");
+
           spdlog::debug("terminating redundant connection for player {}",
             main_id);
         }
@@ -204,52 +263,17 @@ namespace jwt_game_server {
       return id;
     }
 
-  public:
-    game_server(const jwt::verifier<jwt_clock, json_traits>& v)
-      : base_server<typename game_data::player_traits, jwt_clock,
-        json_traits>(v), m_timestep(500ms) {}
+    // member variables
+    std::chrono::milliseconds m_timestep;
+    mutex m_game_list_lock;
 
-    game_server(const jwt::verifier<jwt_clock, json_traits>& v,
-      std::chrono::milliseconds t)
-      : base_server<typename game_data::player_traits, jwt_clock,
-        json_traits>(v), m_timestep(t) {}
-
-    void update_games() {
-      auto time_start = std::chrono::high_resolution_clock::now();
-      while(1) { 
-        auto delta_time =
-          std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() - time_start);
-        if(delta_time >= m_timestep) {
-          lock_guard<mutex> guard(m_game_list_lock);
-          time_start = std::chrono::high_resolution_clock::now();
-          
-          // consider using std::execution::par_unseq here !!
-          for(auto it = m_games.begin(); it != m_games.end();) {
-            shared_ptr<game_instance<game_data, json_traits> > game = *it;
-
-            if(game->game_update(delta_time.count())) {
-              it++;
-            } else {
-              spdlog::debug("game ended");
-              vector<player_id> ids(game->get_player_list());
-              for(player_id id : ids) {
-                connection_hdl hdl = game->get_connection(id);
-
-                super::m_server.close(
-                    hdl,
-                    websocketpp::close::status::normal,
-                    "game ended"
-                  );
-              }
-              spdlog::trace("erasing game from list");
-              it = m_games.erase(it);
-            }
-          }
-        }
-        std::this_thread::sleep_for(std::min(1ms, m_timestep-delta_time));
-      }
-    }
+    map<
+        player_id,
+        shared_ptr<game_instance<game_data, json_traits, server_config> >
+      > m_player_games;
+    set<
+        shared_ptr<game_instance<game_data, json_traits, server_config> >
+      > m_games;
   };
 }
 

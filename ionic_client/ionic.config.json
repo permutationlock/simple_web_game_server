@@ -1,7 +1,0 @@
-{
-  "name": "kierApp",
-  "integrations": {
-    "capacitor": {}
-  },
-  "type": "react"
-}

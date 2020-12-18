@@ -97,6 +97,10 @@ namespace jwt_game_server {
     }
 
     void reset() {
+      if(m_is_running) {
+        stop();
+      }
+
       m_server.reset();
     }
     

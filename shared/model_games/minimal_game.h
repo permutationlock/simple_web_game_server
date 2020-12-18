@@ -15,7 +15,7 @@ using std::map;
 using std::queue;
 
 struct minimal_player_traits {
-  typedef unsigned long player_id;
+  using player_id = unsigned long;
   static player_id parse_id(const json& id_json) {
     return id_json.get<player_id>();
   }
@@ -23,8 +23,8 @@ struct minimal_player_traits {
 
 class minimal_game {
 public:
-  typedef minimal_player_traits player_traits;
-  typedef player_traits::player_id player_id;
+  using player_traits = minimal_player_traits;
+  using player_id = player_traits::player_id;
 
   struct message {
     message(bool b, player_id i, const std::string& t) : broadcast(b),
@@ -85,8 +85,8 @@ private:
 
 class minimal_matchmaking_data {
 public: 
-  typedef minimal_player_traits player_traits;
-  typedef minimal_player_traits::player_id player_id;
+  using player_traits = minimal_player_traits;
+  using player_id = player_traits::player_id;
 
   class player_data {
   public:

@@ -38,8 +38,8 @@ namespace jwt_game_server {
   class base_server {
   // type definitions
   protected:
-    typedef typename player_traits::player_id player_id;
-    typedef typename json_traits::json json;
+    using player_id = typename player_traits::player_id;
+    using json = typename json_traits::json;
 
   private:
     enum action_type {
@@ -48,8 +48,8 @@ namespace jwt_game_server {
       MESSAGE
     };
 
-    typedef websocketpp::server<server_config> ws_server;
-    typedef typename ws_server::message_ptr message_ptr;
+    using ws_server = websocketpp::server<server_config>;
+    using message_ptr = typename ws_server::message_ptr;
 
     struct action {
       action(action_type t, connection_hdl h) : type(t), hdl(h) {}
@@ -77,16 +77,18 @@ namespace jwt_game_server {
         );
     }
 
-    void run(uint16_t port) {
+    void run(uint16_t port, bool unlock_address = false) {
       m_is_running = true;
 
-      m_server.listen(port);
-      m_server.start_accept();
-
       try {
+        m_server.set_reuse_addr(unlock_address);
+        m_server.listen(port);
+        m_server.start_accept();
+
         m_server.run();
       } catch (std::exception& e) {
-        spdlog::debug("error starting server: {}", e.what());
+        m_is_running = false;
+        spdlog::error("error starting server: {}", e.what());
       }
     }
 
@@ -94,6 +96,10 @@ namespace jwt_game_server {
       return m_is_running;
     }
 
+    void reset() {
+      m_server.reset();
+    }
+    
     void stop() {
       lock_guard<mutex> guard(m_connection_lock);
       m_is_running = false;
@@ -108,7 +114,7 @@ namespace jwt_game_server {
               "server shutdown"
             );
         } catch (std::exception& e) {
-          spdlog::error("error closing connection: {}", e.what());
+          spdlog::debug("error closing connection: {}", e.what());
         }
       }
       m_action_cond.notify_all();
@@ -153,7 +159,7 @@ namespace jwt_game_server {
             try {
               this->setup_player(a.hdl, a.msg->get_payload());
             } catch(std::exception& e) {
-              spdlog::debug("error setting up id");
+              spdlog::debug("error setting up id: {}", e.what());
             }
           } else {
             // player id already setup, route to their game
@@ -164,7 +170,7 @@ namespace jwt_game_server {
             try {
               this->process_message(id, a.msg->get_payload());
             } catch(std::exception& e) {
-              spdlog::debug("error processing message");
+              spdlog::debug("error processing message: {}", e.what());
             }
           }
         } else {
@@ -188,7 +194,7 @@ namespace jwt_game_server {
               reason
             );
         } catch (std::exception& e) {
-          spdlog::error("error closing connection: {}", e.what());
+          spdlog::debug("error closing connection: {}", e.what());
         }
     }
 
@@ -265,15 +271,15 @@ namespace jwt_game_server {
         m_jwt_verifier.verify(decoded_token);
         completed = true;
       } catch(std::out_of_range& e) {
-        spdlog::debug("connection provided jwt without id and/or data claim");
+        spdlog::debug("connection provided jwt without id and/or data claim: {}", e.what());
       } catch(jwt::error::token_verification_exception& e) { 
-        spdlog::debug("connection provided jwt that could not be verified");
+        spdlog::debug("connection provided jwt that could not be verified: {}", e.what());
       } catch(std::invalid_argument& e) { 
-        spdlog::debug("connection provided invalid jwt token string");
+        spdlog::debug("connection provided invalid jwt token string: {}", e.what());
       } catch(std::runtime_error& e) {
-        spdlog::debug("connection provided invalid json in jwt");
+        spdlog::debug("connection provided invalid json in jwt: {}", e.what());
       } catch(std::exception& e) {
-        spdlog::debug("unknown reason but invalid login jwt");
+        spdlog::debug("error verifying player jwt: {}", e.what());
       }
       
       if(completed) {

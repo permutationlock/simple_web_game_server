@@ -19,8 +19,8 @@ namespace jwt_game_server {
   class game_instance {
   // type definitions
   private:
-    typedef websocketpp::server<server_config> ws_server;
-    typedef typename game_data::player_id player_id;
+    using ws_server = websocketpp::server<server_config>;
+    using player_id = typename game_data::player_id;
 
   // main class body
   public:
@@ -100,7 +100,7 @@ namespace jwt_game_server {
               websocketpp::frame::opcode::text);
           } catch (std::exception& e) {
             spdlog::debug(
-                "error sending message ({}) to id: {}, with error: {}",
+                "error sending message \"{}\" to player {}: {}",
                 text,
                 id,
                 e.what()
@@ -121,7 +121,7 @@ namespace jwt_game_server {
             );
         } catch (std::exception& e) {
             spdlog::debug(
-                "error sending message ({}) to id: {}, with error: {}",
+                "error sending message \"{}\" to player {}: {}",
                 text,
                 id,
                 e.what()
@@ -160,10 +160,10 @@ namespace jwt_game_server {
       jwt_clock, json_traits, server_config> {
   // type definitions
   private:
-    typedef base_server<typename game_data::player_traits, jwt_clock,
-      json_traits, server_config> super;
-    typedef typename super::player_id player_id;
-    typedef typename super::json json;
+    using super = base_server<typename game_data::player_traits, jwt_clock,
+      json_traits, server_config>;
+    using player_id = typename super::player_id;
+    using json = typename super::json;
 
   // main class body
   public:
@@ -191,8 +191,6 @@ namespace jwt_game_server {
               > game = *it;
 
             if(game->game_update(delta_time.count())) {
-              it++;
-            } else {
               spdlog::debug("game ended");
               vector<player_id> ids(game->get_player_list());
               for(player_id id : ids) {
@@ -201,6 +199,8 @@ namespace jwt_game_server {
               }
               spdlog::trace("erasing game from list");
               it = m_games.erase(it);
+            } else {
+              it++;
             }
           }
         }

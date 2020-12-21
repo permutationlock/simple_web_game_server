@@ -3,7 +3,7 @@ CXXFLAGS = -O0 -Wall -Wno-unused-result -pthread -lssl -lcrypto
 INCLUDES = -I../../include -I../../shared -I../include
 
 TARGET = run_tests
-SRCS   = main.cpp minimal_game_test.cpp minimal_game_server_test.cpp
+SRCS   = main.cpp minimal_game_test.cpp minimal_game_server_test.cpp base_client_test.cpp
 OBJS   = $(SRCS:.cpp=.o)
 DEPS   = $(SRCS:.cpp=.depends)
 

@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 #include <nlohmann/json.hpp>
-#include <model_games/minimal_game.h>
+#include <model_games/minimal_game.hpp>
 
 #include <vector>
 #include <map>

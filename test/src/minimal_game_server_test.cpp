@@ -9,7 +9,7 @@
 #include <jwt_game_server/game_server.hpp>
 #include <jwt_game_server/base_client.hpp>
 #include <json_traits/nlohmann_traits.hpp>
-#include <model_games/minimal_game.h>
+#include <model_games/minimal_game.hpp>
 
 #include <websocketpp_configs/asio_no_logs.hpp>
 #include <websocketpp_configs/asio_client_no_logs.hpp>
@@ -18,6 +18,8 @@
 #include <functional>
 #include <sstream>
 #include <chrono>
+
+#include "constants.hpp"
 
 TEST_CASE("players should be able to connect to the server with no errors") {
   using namespace std::chrono_literals;
@@ -37,7 +39,7 @@ TEST_CASE("players should be able to connect to the server with no errors") {
 
   // setup logging sink to track errors
   std::ostringstream oss;
-  auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt> (oss);
+  auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(oss);
   auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
   spdlog::set_default_logger(logger);
   spdlog::set_level(spdlog::level::err);
@@ -49,9 +51,11 @@ TEST_CASE("players should be able to connect to the server with no errors") {
     .with_issuer("jwt-gs-test");
 
   SUBCASE("games start when players connect and die when they leave") {
-    minimal_game_server gs(verifier, 10000ms);
+    minimal_game_server gs{verifier, 10000ms};
 
-    std::thread server_thr(bind(&minimal_game_server::run, &gs, 9090, true));
+    std::thread server_thr{
+        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+      };
 
     // wait for the server to start
     while(!gs.is_running()) {
@@ -59,15 +63,21 @@ TEST_CASE("players should be able to connect to the server with no errors") {
     }
    
     // bind a thread to process messages
-    std::thread msg_process_thr(bind(&minimal_game_server::process_messages,&gs));
+    std::thread msg_process_thr{
+        bind(&minimal_game_server::process_messages,&gs)
+      };
 
     // bind a thread to update all running games at regular time steps
-    std::thread game_thr(bind(&minimal_game_server::update_games,&gs));
+    std::thread game_thr{bind(&minimal_game_server::update_games,&gs)};
 
     std::vector<minimal_game_client> clients;
     std::vector<std::thread> client_threads;
 
     const int PLAYER_COUNT = 200;
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      clients.push_back(minimal_game_client{});
+    }
+
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
       minimal_game::player_id player = i;
       std::vector<minimal_game::player_id> players = { i };
@@ -78,11 +88,12 @@ TEST_CASE("players should be able to connect to the server with no errors") {
         .set_payload_claim("data", claim(data))
         .sign(jwt::algorithm::hs256{"secret"});
 
-      clients.push_back(minimal_game_client{"ws://localhost:9090", token});
-    }
+      std::string uri = std::string{"ws://localhost:"}
+        + std::to_string(SERVER_PORT);
 
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      std::thread client_thr(bind(&minimal_game_client::connect, &(clients[i])));
+      std::thread client_thr{
+          bind(&minimal_game_client::connect, &(clients[i]), uri, token)
+        };
 
       while(!clients[i].is_running()) {
         std::this_thread::sleep_for(1ms);
@@ -113,14 +124,16 @@ TEST_CASE("players should be able to connect to the server with no errors") {
     game_thr.join();
     server_thr.join();
 
-    CHECK(oss.str().empty());
+    CHECK(oss.str() == std::string{""});
   }
 
   SUBCASE("players should be disconnected when games end") {
     // server with fast loop that notices games are done
-    minimal_game_server gs(verifier, 10ms);
+    minimal_game_server gs{verifier, 10ms};
 
-    std::thread server_thr(bind(&minimal_game_server::run, &gs, 9090, true));
+    std::thread server_thr{
+        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+      };
 
     // wait for the server to start
     while(!gs.is_running()) {
@@ -128,15 +141,21 @@ TEST_CASE("players should be able to connect to the server with no errors") {
     }
    
     // bind a thread to process messages
-    std::thread msg_process_thr(bind(&minimal_game_server::process_messages,&gs));
+    std::thread msg_process_thr{
+        bind(&minimal_game_server::process_messages,&gs)
+      };
 
     // bind a thread to update all running games at regular time steps
-    std::thread game_thr(bind(&minimal_game_server::update_games,&gs));
+    std::thread game_thr{bind(&minimal_game_server::update_games,&gs)};
 
     std::vector<minimal_game_client> clients;
     std::vector<std::thread> client_threads;
 
     const int PLAYER_COUNT = 200;
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      clients.push_back(minimal_game_client{});
+    }
+
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
       minimal_game::player_id player = i;
       std::vector<minimal_game::player_id> players = { i };
@@ -147,11 +166,12 @@ TEST_CASE("players should be able to connect to the server with no errors") {
         .set_payload_claim("data", claim(data))
         .sign(jwt::algorithm::hs256{"secret"});
 
-      clients.push_back(minimal_game_client{"ws://localhost:9090", token});
-    }
+      std::string uri = std::string{"ws://localhost:"}
+        + std::to_string(SERVER_PORT);
 
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      std::thread client_thr(bind(&minimal_game_client::connect, &(clients[i])));
+      std::thread client_thr{
+          bind(&minimal_game_client::connect, &(clients[i]), uri, token)
+        };
       client_threads.push_back(std::move(client_thr));
     }
 
@@ -177,6 +197,6 @@ TEST_CASE("players should be able to connect to the server with no errors") {
     game_thr.join();
     server_thr.join();
 
-    CHECK(oss.str().empty());
+    CHECK(oss.str() == std::string{""});
   }
 }

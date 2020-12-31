@@ -5,6 +5,8 @@
 
 #include <set>
 #include <chrono>
+#include <algorithm>
+#include <execution>
 
 namespace jwt_game_server {
   // time literals to initialize timestep variables
@@ -15,21 +17,23 @@ namespace jwt_game_server {
   using std::shared_ptr;
   using std::make_shared;
 
-  template<typename game_data, typename json_traits, typename server_config>
+  template<typename game_data, typename json_traits>
   class game_instance {
   // type definitions
   private:
-    using ws_server = websocketpp::server<server_config>;
     using player_id = typename game_data::player_id;
 
   // main class body
   public:
-    game_instance(ws_server* s, const game_data& data) :
-      m_server_ptr(s), m_game(data)  {}
+    game_instance(const game_data& data) :
+        m_game(data)  {
+      for(player_id id : data.get_player_list()) {
+        m_player_status[id] = false;
+      }
+    }
 
     void connect(player_id id, connection_hdl hdl) {
       spdlog::trace("connect called for player {}", id);
-      lock_guard<mutex> guard(m_game_lock);
       m_player_connections[id] = hdl;
       if(m_player_status.count(id) < 1 || !m_player_status[id]) {
         m_player_status[id] = true;
@@ -39,18 +43,15 @@ namespace jwt_game_server {
 
     void disconnect(player_id id) {
       spdlog::trace("disconnect called for player {}", id);
-      lock_guard<mutex> guard(m_game_lock);
       m_player_status[id] = false;
       m_game.disconnect(id);
     }
 
     bool is_connected(player_id id) {
-      lock_guard<mutex> guard(m_game_lock);
       return m_player_status[id];
     }
 
     connection_hdl get_connection(player_id id) {
-      lock_guard<mutex> guard(m_game_lock);
       return m_player_connections[id];
     }
 
@@ -65,92 +66,54 @@ namespace jwt_game_server {
         return;
       }
 
-      lock_guard<mutex> guard(m_game_lock);
       m_game.player_update(id, msg_json);
-      send_messages();
     }
     
-    // update game every timestep, return false if game is over
-    // this method should only be called by the game update thread
-    bool game_update(long delta_time) {
+    // update game every timestep
+    void game_update(long delta_time) {
       spdlog::trace("update with timestep: {}", delta_time);
       
-      lock_guard<mutex> guard(m_game_lock);
       m_game.game_update(delta_time);
-      send_messages();
+    }
 
+    bool is_done() { 
       return m_game.is_done();
     }
 
     // return player ids
-    vector<player_id> get_player_list() {
-      lock_guard<mutex> guard(m_game_lock);
+    const vector<player_id>& get_player_list() {
       return m_game.get_player_list();
     }
 
+    struct message {
+      connection_hdl hdl;
+      std::string text;
+    };
+
+    bool get_message(message& msg) {
+      if(!m_game.has_message()) {
+        return false;
+      }
+      
+      auto game_message = m_game.get_message();
+      m_game.pop_message();
+
+      if(!is_connected(game_message.id)) {
+        spdlog::debug("message discarded for player {} who is not connected",
+          game_message.id);
+        return false;
+      }
+
+      msg.hdl = m_player_connections[game_message.id];
+      msg.text = game_message.text;
+
+      return true;
+    }
+
   private:
-    // private members don't lock since public members already acquire the lock
-    void broadcast(const std::string& text) {
-      for (auto const& player : m_player_connections) {
-        player_id id = player.first;
-        connection_hdl hdl = player.second;
-        if(m_player_status[id]) {
-          try {
-            m_server_ptr->send(hdl, text,
-              websocketpp::frame::opcode::text);
-          } catch (std::exception& e) {
-            spdlog::debug(
-                "error sending message \"{}\" to player {}: {}",
-                text,
-                id,
-                e.what()
-              );
-          }
-        }
-      }
-    }
-
-    bool send(player_id id, const std::string& text) {
-      bool success = true;
-      if(m_player_status[id]) {
-        try {
-          m_server_ptr->send(
-              m_player_connections[id],
-              text,
-              websocketpp::frame::opcode::text
-            );
-        } catch (std::exception& e) {
-            spdlog::debug(
-                "error sending message \"{}\" to player {}: {}",
-                text,
-                id,
-                e.what()
-              );
-        }
-      } else {
-        success = false;
-      }
-      return success;
-    }
-
-    void send_messages() {
-      spdlog::trace("sending queued messages");
-      while(m_game.has_message()) {
-        auto msg = m_game.get_message();
-        if(msg.broadcast) {
-          broadcast(msg.text);
-        } else {
-          send(msg.id, msg.text);
-        }
-        m_game.pop_message();
-      }
-    }
-
     // member variables
-    ws_server* m_server_ptr;
     map<player_id, connection_hdl> m_player_connections;
     map<player_id, bool> m_player_status;
-    mutex m_game_lock;
     game_data m_game;
   };
 
@@ -164,6 +127,7 @@ namespace jwt_game_server {
       json_traits, server_config>;
     using player_id = typename super::player_id;
     using json = typename super::json;
+    using game_ptr = shared_ptr<game_instance<game_data, json_traits> >;
 
   // main class body
   public:
@@ -174,26 +138,41 @@ namespace jwt_game_server {
       std::chrono::milliseconds t)
         : super(v), m_timestep(t) {}
 
+    void set_timestep(std::chrono::milliseconds t) {
+      if(!super::is_running()) {
+        m_timestep = t;
+      }
+    }
+
     void update_games() {
       auto time_start = std::chrono::high_resolution_clock::now();
-      while(super::m_is_running) { 
-        auto delta_time =
+      while(super::is_running()) { 
+        const auto delta_time =
           std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - time_start);
         if(delta_time >= m_timestep) {
           lock_guard<mutex> game_guard(m_game_list_lock);
           time_start = std::chrono::high_resolution_clock::now();
-          
-          // consider using std::execution::par_unseq here !!
-          for(auto it = m_games.begin(); it != m_games.end();) {
-            shared_ptr<
-                game_instance<game_data, json_traits, server_config>
-              > game = *it;
 
-            if(game->game_update(delta_time.count())) {
+          // game updates are completely independent, so exec in parallel
+          std::for_each(
+              std::execution::par,
+              m_games.begin(),
+              m_games.end(),
+              [=](game_ptr game){
+                game->game_update(delta_time.count());
+              }
+            );
+
+          // base_server actions are locked so exec in sequence
+          for(auto it = m_games.begin(); it != m_games.end();) {
+            game_ptr game = *it;
+
+            send_messages(game);
+
+            if(game->is_done()) {
               spdlog::debug("game ended");
-              vector<player_id> ids(game->get_player_list());
-              for(player_id id : ids) {
+              for(player_id id : game->get_player_list()) {
                 connection_hdl hdl = game->get_connection(id);
                 super::close_connection(hdl, "game ended");
               }
@@ -210,7 +189,11 @@ namespace jwt_game_server {
 
   private:
     void process_message(player_id id, const std::string& text) {
-      m_player_games[id]->process_player_update(id, text);
+      {
+        lock_guard<mutex> guard(m_game_list_lock);
+        m_player_games[id]->process_player_update(id, text);
+        send_messages(m_player_games[id]);
+      }
       super::process_message(id, text);
     }
 
@@ -228,8 +211,8 @@ namespace jwt_game_server {
       lock_guard<mutex> game_guard(m_game_list_lock);
       if(m_player_games.count(main_id)<1) {
         auto gs = make_shared<
-            game_instance<game_data, json_traits, server_config>
-          >(&(super::m_server), d);
+            game_instance<game_data, json_traits>
+          >(d);
         m_games.insert(gs);
 
         for(player_id id : d.get_player_list()) {
@@ -249,8 +232,11 @@ namespace jwt_game_server {
           spdlog::debug("terminating redundant connection for player {}",
             main_id);
         }
+
         m_player_games[main_id]->connect(main_id, hdl);
       }
+
+      send_messages(m_player_games[main_id]);
     }
 
     player_id player_disconnect(connection_hdl hdl) {
@@ -263,16 +249,24 @@ namespace jwt_game_server {
       return id;
     }
 
+    // send all available messages for a given game
+    void send_messages(game_ptr game) {
+      typename game_instance<game_data, json_traits>::message msg;
+      while(game->get_message(msg)) {
+        super::send_message(msg.hdl, msg.text);
+      }
+    }
+
     // member variables
     std::chrono::milliseconds m_timestep;
     mutex m_game_list_lock;
 
     map<
         player_id,
-        shared_ptr<game_instance<game_data, json_traits, server_config> >
+        game_ptr
       > m_player_games;
     set<
-        shared_ptr<game_instance<game_data, json_traits, server_config> >
+        game_ptr
       > m_games;
   };
 }

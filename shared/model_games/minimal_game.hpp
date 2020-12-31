@@ -27,10 +27,8 @@ public:
   using player_id = player_traits::player_id;
 
   struct message {
-    message(bool b, player_id i, const std::string& t) : broadcast(b),
-      id(i), text(t) {}
+    message(player_id i, const std::string& t) : id(i), text(t) {}
 
-    bool broadcast;
     player_id id;
     std::string text;
   };
@@ -47,7 +45,11 @@ public:
 
   void disconnect(player_id id) {}
 
-  void player_update(player_id id, const json& data) {}
+  void player_update(player_id id, const json& data) {
+    for(player_id pid : m_player_list) {
+      m_message_queue.push(message{pid, data.dump()});
+    }
+  }
 
   void game_update(long delta_time) {}
 
@@ -83,46 +85,37 @@ private:
   bool m_valid;
 };
 
-class minimal_matchmaking_data {
-public: 
+struct minimal_matchmaking_data {
   using player_traits = minimal_player_traits;
   using player_id = player_traits::player_id;
 
-  class player_data {
-  public:
+  struct player_data {
     player_data() {}
     player_data(const json& data) {}
   };
 
-  class game {
-  public:
-    bool add_player(player_id id) {
-      m_player_list.push_back(id);
-      return (m_player_list.size() > 1);
+  struct game {
+    game(const vector<player_id>& pl) : player_list(pl) {
+      data["players"] = player_list;
     }
 
-    json to_json() {
-      json game_json;
-      game_json["players"] = m_player_list;  
-
-      return game_json;
-    }
-
-    const vector<player_id>& get_player_list() const {
-      return m_player_list;
-    }
-
-  private:
-    vector<player_id> m_player_list;
+    vector<player_id> player_list;
+    json data;
   };
 
+  static bool can_match(const map<player_id, player_data>& player_map) {
+    return player_map.size() >= 2;
+  }
+
   static vector<game> match(const map<player_id, player_data>& player_map) {
+    vector<player_id> pl;
     vector<game> game_list;
-    game g;
+
     for(auto const& player : player_map) {
-      if(g.add_player(player.first)) {
-        game_list.push_back(g);
-        g = game{};
+      pl.push_back(player.first);
+      if(pl.size() > 1) {
+        game_list.push_back(game{pl});
+        pl.clear();
       }
     }
 

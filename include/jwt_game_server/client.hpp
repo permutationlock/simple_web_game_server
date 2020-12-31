@@ -27,7 +27,7 @@ namespace jwt_game_server {
   using std::lock_guard;
 
   template<typename client_config>
-  class base_client {
+  class client {
   // type definitions
   private:
     using ws_client = websocketpp::client<client_config>;
@@ -35,23 +35,23 @@ namespace jwt_game_server {
 
   // main class body
   public:
-    base_client()
+    client()
         : m_is_running(false), m_has_failed(false), m_handle_open([](){}),
           m_handle_close([](){}),
           m_handle_message([](const std::string& s){}) {
       m_client.init_asio();
 
-      m_client.set_open_handler(bind(&base_client::on_open, this,
+      m_client.set_open_handler(bind(&client::on_open, this,
         jwt_game_server::_1));
-      m_client.set_close_handler(bind(&base_client::on_close, this,
+      m_client.set_close_handler(bind(&client::on_close, this,
         jwt_game_server::_1));
       m_client.set_message_handler(
-          bind(&base_client::on_message, this, jwt_game_server::_1,
+          bind(&client::on_message, this, jwt_game_server::_1,
             jwt_game_server::_2)
         );
     }
 
-    base_client(const base_client& c) : base_client() {}
+    client(const client& c) : client() {}
 
     void connect(const std::string& uri, const std::string& jwt) {
       if(m_is_running) {
@@ -88,8 +88,8 @@ namespace jwt_game_server {
     }
 
     void disconnect() {
-      lock_guard<mutex> guard(m_connection_lock);
       if(m_is_running) {
+        lock_guard<mutex> guard(m_connection_lock);
         try {
           spdlog::trace("closing client connection");
           m_connection->close(
@@ -103,8 +103,8 @@ namespace jwt_game_server {
     }
 
     void send(const std::string& msg) {
-      lock_guard<mutex> guard(m_connection_lock);
       if(m_is_running) {
+        lock_guard<mutex> guard(m_connection_lock);
         try {
           m_connection->send(
               msg,
@@ -125,7 +125,7 @@ namespace jwt_game_server {
       if(!m_is_running) {
         m_handle_open = f;
       } else {
-        spdlog::error("client cannot bind handler while running");
+        spdlog::error("client cannot bind open handler while running");
       }
     }
 
@@ -133,7 +133,7 @@ namespace jwt_game_server {
       if(!m_is_running) {
         m_handle_close = f;
       } else { 
-        spdlog::error("client cannot bind handler while running");
+        spdlog::error("client cannot bind close handler while running");
       }
     }
 
@@ -141,7 +141,7 @@ namespace jwt_game_server {
       if(!m_is_running) {
         m_handle_message = f;
       } else {
-        spdlog::error("client cannot bind handler while running");
+        spdlog::error("client cannot bind message handler while running");
       }
     }
 

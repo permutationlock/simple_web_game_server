@@ -14,9 +14,12 @@ using std::vector;
 using std::map;
 using std::queue;
 
+const int X_VAL = 1;
+const int O_VAL = -1;
+
 class tic_tac_toe_board {
 public:
-  tic_tac_toe_board() m_state(0), m_done(false) {
+  tic_tac_toe_board(): m_state(0), m_done(false) {
     for(std::size_t i=0; i<9; i++) {
       m_board.push_back(0);
     }
@@ -34,27 +37,27 @@ public:
     return true;
   }
 
-  bool add_x(unsigned int i, unsigned int j) {
+  bool add_o(unsigned int i, unsigned int j) {
     if(i > 2 || j > 2) {
       return false;
     } else if(m_board[i+3*j] != 0) {
       return false;
     }
 
-    m_board[i+3*j] = Y_VAL;
+    m_board[i+3*j] = O_VAL;
     update_state();
     return true;
   }
 
-  int get_state() {
+  int get_state() const {
     return m_state;
   }
 
-  bool is_done() {
+  bool is_done() const {
     return m_done;
   }
 
-  json to_json() {
+  json to_json() const {
     return json{m_board};
   }
   
@@ -108,13 +111,15 @@ private:
     }
 
     // check diagonals
-    if(get_value(0, 0) == get_value(1, 1) == get_value(2, 2)) {
+    if(get_value(0, 0) == get_value(1, 1)
+        && get_value(1, 1)  == get_value(2, 2)) {
       if(get_value(1, 1) != 0) {
         m_state = get_value(1, 1);
         return;
       }
     }
-    if(get_value(2, 0) == get_value(1, 1) == get_value(0, 2)) {
+    if(get_value(2, 0) == get_value(1, 1)
+        && get_value(1, 1) == get_value(0, 2)) {
       if(get_value(1, 1) != 0) {
         m_state = get_value(1, 1);
         return;
@@ -141,16 +146,14 @@ public:
   typedef player_traits::player_id player_id;
 
   struct message {
-    message(bool b, player_id i, const std::string& t) : broadcast(b),
-      id(i), text(t) {}
+    message(player_id i, const std::string& t) : id(i), text(t) {}
 
-    bool broadcast;
     player_id id;
     std::string text;
   };
 
   tic_tac_toe_game(const json& msg) : m_valid(true), m_started(false),
-    m_turn(0), m_elapsed_time(0)
+    m_elapsed_time(0)
   {
     spdlog::trace(msg.dump());
 
@@ -196,22 +199,28 @@ public:
 
   void player_update(player_id id, const json& data) {
     try {
-      unsigned int i = msg["move"][0].get<unsigned int>();
-      unsigned int j = msg["move"][1].get<unsigned int>();
+      unsigned int i = data["move"][0].get<unsigned int>();
+      unsigned int j = data["move"][1].get<unsigned int>();
       if(m_started) {
         if(id == m_player_list[0]) {
-          if(xmove) {
-            m_board.xmove(i, j);
-            xmove = false;
-            m_move_list.push_back(msg["move"]);
-            broadcast(get_game_state());
+          if(m_xmove) {
+            if(m_board.add_x(i, j)) {
+              m_xmove = false;
+              m_move_list.push_back(data["move"]);
+              broadcast(get_game_state());
+            } else {
+              spdlog::debug("player sent invalid move: {}", data.dump());
+            }
           }
         } else {
-          if(!xmove) {
-            m_board.omove(i, j);
-            xmove = true;
-            m_move_list.push_back(msg["move"]);
-            broadcast(get_game_state());
+          if(!m_xmove) {
+            if(m_board.add_o(i, j)) {
+              m_xmove = true;
+              m_move_list.push_back(data["move"]);
+              broadcast(get_game_state());
+            } else {
+              spdlog::debug("player sent invalid move: {}", data.dump());
+            }
           }
         }
       }
@@ -271,11 +280,13 @@ public:
 
 private:
   void broadcast(const json& msg) {
-    m_message_queue.push(message(true, 0, msg.dump()));
+    for(player_id id : m_player_list) {
+      m_message_queue.push(message{id, msg.dump()});
+    }
   }
 
   void send(player_id id, const json& msg) {
-    m_message_queue.push(message(false, id, msg.dump()));
+    m_message_queue.push(message{id, msg.dump()});
   }
 
   void start() {
@@ -304,52 +315,43 @@ private:
   tic_tac_toe_board m_board;
 };
 
-class tic_tac_toe_matchmaking_data {
+struct tic_tac_toe_matchmaking_data {
 public: 
   typedef tic_tac_toe_player_traits player_traits;
   typedef tic_tac_toe_player_traits::player_id player_id;
 
-  class player_data {
-  public:
+  struct player_data {
     player_data() {}
     player_data(const json& data) {}
   };
 
-  class game {
-  public:
-    bool add_player(player_id id) {
-      m_player_list.push_back(id);
-      return (m_player_list.size() > 1);
+  struct game {
+    game(const vector<player_id>& pl) : player_list(pl) { 
+      data["board"] = tic_tac_toe_board{}.to_json();
+      data["players"] = player_list;  
+      data["xmove"] = true;
+      data["moves"] = std::vector<json>{};
+      data["state"] = 0;
+      data["done"] = false;
     }
 
-    json to_json() {
-      json game_json;
-      
-      game_json["board"] = tic_tac_toe_board{}.to_json();
-      game_json["players"] = m_player_list;  
-      game_json["xmove"] = true;
-      game_json["moves"] = json::array{};
-      game_json["state"] = 0;
-      game_json["done"] = false;
-
-      return game_json;
-    }
-
-    const vector<player_id>& get_player_list() {
-      return m_player_list;
-    }
-
-  private:
-    vector<player_id> m_player_list;
+    vector<player_id> player_list;
+    json data;
   };
 
+  static bool can_match(const map<player_id, player_data>& player_map) {
+    return player_map.size() >= 2;
+  }
+
   static vector<game> match(const map<player_id, player_data>& player_map) {
+    vector<player_id> pl;
     vector<game> game_list;
-    game g;
+
     for(auto const& player : player_map) {
-      if(g.add_player(player.first)) {
-        game_list.push_back(g);
-        g = game{};
+      pl.push_back(player.first);
+      if(pl.size() > 1) {
+        game_list.push_back(game{pl});
+        pl.clear();
       }
     }
 

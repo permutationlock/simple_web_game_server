@@ -1,6 +1,6 @@
 CXX      = g++
-CXXFLAGS = -O0 -Wall -Wno-unused-result -pthread -lboost_log -lssl -lcrypto
-INCLUDES = -I../../../include
+CXXFLAGS = -O0 -Wall -std=c++17 -pthread -lboost_log -lssl -lcrypto
+INCLUDES = -I../../../include -I../../../shared
 
 TARGET = matchmaking_server
 SRCS   = matchmaking_server.cpp

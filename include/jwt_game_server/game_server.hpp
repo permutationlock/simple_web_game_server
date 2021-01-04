@@ -225,7 +225,6 @@ namespace jwt_game_server {
           m_player_games[main_id]->disconnect(main_id);
           connection_hdl hdl =
             m_player_games[main_id]->get_connection(main_id);
-          super::player_disconnect(hdl);
           
           super::close_connection(hdl, "player opened redundant connection");
 

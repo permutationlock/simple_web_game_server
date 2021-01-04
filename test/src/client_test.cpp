@@ -21,7 +21,7 @@
 
 #include "constants.hpp"
 
-TEST_CASE("the base client should connect to a websocket server") {
+TEST_CASE("the base client should interact with a websocket server") {
   using namespace std::chrono_literals;
 
   using ws_server = websocketpp::server<asio_no_logs>;

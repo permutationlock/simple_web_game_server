@@ -3,8 +3,7 @@
 
 #include <websocketpp/client.hpp>
 
-#include <jwt-cpp/jwt.h>
-
+#include <jwt-cpp/jwt.h> 
 #include <spdlog/spdlog.h>
 
 #include <atomic>
@@ -88,8 +87,8 @@ namespace jwt_game_server {
     }
 
     void disconnect() {
+      lock_guard<mutex> guard(m_connection_lock);
       if(m_is_running) {
-        lock_guard<mutex> guard(m_connection_lock);
         try {
           spdlog::trace("closing client connection");
           m_connection->close(
@@ -103,8 +102,8 @@ namespace jwt_game_server {
     }
 
     void send(const std::string& msg) {
+      lock_guard<mutex> guard(m_connection_lock);
       if(m_is_running) {
-        lock_guard<mutex> guard(m_connection_lock);
         try {
           m_connection->send(
               msg,

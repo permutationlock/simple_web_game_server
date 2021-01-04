@@ -5,17 +5,17 @@
 #include <chrono>
 #include <functional>
 #include <thread>
+#include <spdlog/spdlog.h>
 
-// Create player_count clients running in a thread and using the handlers
+// Create player_count clients each running in a thread and using the handlers
 // provided in client_data. It is expected that clients, client_data_list, and
 // client_threads are all empty vectors which will be filled by this call.
 // The vector of tokens is expected to contain player_count JWT token strings.
 // Clients will connect using their corresponding token to the server at the
 // provided uri.
 template<typename player_id, typename game_client, typename client_data>
-void create_clients(
-      std::vector<game_client>& clients,
-      std::vector<client_data>& client_data_list,
+inline void create_clients(
+      std::vector<game_client>& clients, std::vector<client_data>& client_data_list,
       std::vector<std::thread>& client_threads,
       const std::vector<std::string>& tokens,
       const std::string& uri,
@@ -43,15 +43,15 @@ void create_clients(
   }
 
   for(std::size_t i = 0; i < player_count; i++) {
-    std::thread client_thr{
-        bind(&game_client::connect, &(clients[i]), uri, tokens[i])
+    std::thread client_thread = std::thread{
+        std::bind(&game_client::connect, &(clients[i]), uri, tokens[i])
       };
 
     while(!clients[i].is_running()) {
       std::this_thread::sleep_for(1ms);
     }
 
-    client_threads.push_back(std::move(client_thr));
+    client_threads.push_back(std::move(client_thread));
   }
 }
 

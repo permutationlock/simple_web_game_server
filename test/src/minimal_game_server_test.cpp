@@ -37,12 +37,19 @@ TEST_CASE("players should interact with the server with no errors") {
     >;
 
   struct test_client_data {
-    void on_open() {}
-    void on_close() {}
+    test_client_data() : is_connected(false) {}
+
+    void on_open() {
+      is_connected = true;
+    }
+    void on_close() {
+      is_connected = false;
+    }
     void on_message(const std::string& message) {
       last_message = message;
     }
 
+    bool is_connected;
     std::string last_message;
   };
 
@@ -76,7 +83,7 @@ TEST_CASE("players should interact with the server with no errors") {
   std::vector<std::string> tokens;
 
   SUBCASE("games start when players connect and die when they leave") {
-    gs.set_timestep(10000ms);
+    gs.set_timestep(100000ms);
 
     server_thr = std::thread{
         bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
@@ -98,7 +105,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
 
-    PLAYER_COUNT = 200;
+    PLAYER_COUNT = 121;
 
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
       player_id player = i;
@@ -116,8 +123,17 @@ TEST_CASE("players should interact with the server with no errors") {
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
       );
 
-    std::this_thread::sleep_for(100ms);
+    // long pause here because it may take 1-2ms per client to create
+    std::this_thread::sleep_for(3000ms);
 
+    std::size_t conn_count = 0;
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      if(client_data_list[i].is_connected) {
+        conn_count++;
+      }
+    }
+
+    CHECK(conn_count == PLAYER_COUNT);
     CHECK(gs.get_player_count() == PLAYER_COUNT);
     CHECK(oss.str() == std::string{""}); 
   }
@@ -146,7 +162,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
 
-    PLAYER_COUNT = 200;
+    PLAYER_COUNT = 87;
 
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
       player_id player = i;
@@ -167,12 +183,17 @@ TEST_CASE("players should interact with the server with no errors") {
     // long pause here since some timeouts need to resolve
     std::this_thread::sleep_for(1000ms);
 
+
+    std::size_t running_count = 0;
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      if(clients[i].is_running()) {
+        running_count++;
+      }
+    }
+
+    CHECK(running_count == 0);
     CHECK(gs.get_player_count() == 0);
     CHECK(oss.str() == std::string{""});
-
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      CHECK(clients[i].is_running() == false);
-    }
   }
 
   SUBCASE("player messages should be echoed back") {
@@ -198,7 +219,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
 
-    PLAYER_COUNT = 10;
+    PLAYER_COUNT = 23;
 
     // place each player into a one player game
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
@@ -259,7 +280,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
 
-    PLAYER_COUNT = 10;
+    PLAYER_COUNT = 30;
     const std::size_t GAME_SIZE = 2;
 
     // sign game tokens sorting players into games of GAME_SIZE players each
@@ -288,7 +309,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     CHECK(oss.str() == std::string{""});
 
-    std::string message{"{\"text\":\"hello in there\"}"};
+    std::string message{"{\"test\":\"hello all!\"}"};
 
     // have one player in each game send a message
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {

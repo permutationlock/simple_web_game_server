@@ -46,7 +46,8 @@ namespace jwt_game_server {
       SUBSCRIBE,
       UNSUBSCRIBE,
       IN_MESSAGE,
-      OUT_MESSAGE
+      OUT_MESSAGE,
+      CLOSE_CONNECTION
     };
 
     using ws_server = websocketpp::server<server_config>;
@@ -99,26 +100,30 @@ namespace jwt_game_server {
 
     void reset() {
       if(m_is_running) {
-        stop();
+        this->stop();
       }
 
       m_server.reset();
     }
-    
-    void stop() {      lock_guard<mutex> guard(m_connection_lock);
-      m_is_running = false;
-      m_server.stop_listening();
 
-      for(auto& con_pair : m_connection_ids) {
-        connection_hdl hdl = con_pair.first;
-        try {
-          m_server.close(
-              hdl,
-              websocketpp::close::status::normal,
-              "server shutdown"
-            );
-        } catch (std::exception& e) {
-          spdlog::debug("error closing connection: {}", e.what());
+    // stop is virtual because subclasses may overload to halt worker threads
+    virtual void stop() {
+      {
+        lock_guard<mutex> guard(m_connection_lock);
+        m_is_running = false;
+        m_server.stop_listening();
+
+        for(auto& con_pair : m_connection_ids) {
+          connection_hdl hdl = con_pair.first;
+          try {
+            m_server.close(
+                hdl,
+                websocketpp::close::status::normal,
+                "server shutdown"
+              );
+          } catch (std::exception& e) {
+            spdlog::debug("error closing connection: {}", e.what());
+          }
         }
       }
       m_action_cond.notify_all();
@@ -188,6 +193,17 @@ namespace jwt_game_server {
                 e.what()
               );
           }
+        } else if(a.type == CLOSE_CONNECTION) { 
+          lock_guard<mutex> guard(m_connection_lock);
+          try {
+            m_server.close(
+                a.hdl,
+                websocketpp::close::status::normal,
+                a.msg
+              );
+          } catch (std::exception& e) {
+            spdlog::debug("error closing connection: {}", e.what());
+          }
         } else {
           // undefined.
         }
@@ -210,16 +226,13 @@ namespace jwt_game_server {
     }
 
     void close_connection(connection_hdl hdl, const std::string& reason) {
-      lock_guard<mutex> guard(m_connection_lock);
-      try {
-        m_server.close(
-            hdl,
-            websocketpp::close::status::normal,
-            reason
-          );
-      } catch (std::exception& e) {
-        spdlog::debug("error closing connection: {}", e.what());
+      {
+        lock_guard<mutex> guard(m_action_lock);
+        spdlog::trace("close_connection: {}", reason);
+        m_actions.push(action(UNSUBSCRIBE,hdl));
+        m_actions.push(action(CLOSE_CONNECTION, hdl, reason));
       }
+      m_action_cond.notify_one();
     }
 
     virtual void process_message(player_id, const std::string& text) {}
@@ -252,6 +265,14 @@ namespace jwt_game_server {
 
     void on_close(connection_hdl hdl) {
       {
+        lock_guard<mutex> guard(m_connection_lock);
+
+        // check if unsubscribe cleanup has already been completed
+        if(m_connection_ids.count(hdl) == 0) {
+          return;
+        }
+      }
+      {
         lock_guard<mutex> guard(m_action_lock);
         spdlog::trace("connection closed");
         m_actions.push(action(UNSUBSCRIBE,hdl));
@@ -282,14 +303,14 @@ namespace jwt_game_server {
         completed = true;
       } catch(std::out_of_range& e) {
         spdlog::debug("connection provided jwt without id and/or data claim: {}", e.what());
-      } catch(jwt::error::token_verification_exception& e) { 
+      } catch(jwt::error::token_verification_exception& e) {
         spdlog::debug("connection provided jwt that could not be verified: {}", e.what());
       } catch(std::invalid_argument& e) { 
         spdlog::debug("connection provided invalid jwt token string: {}", e.what());
       } catch(std::runtime_error& e) {
         spdlog::debug("connection provided invalid json in jwt: {}", e.what());
       } catch(std::exception& e) {
-        spdlog::debug("error verifying player jwt: {}", e.what());
+        spdlog::debug("error verifying player: {}", e.what());
       }
       
       if(completed) {

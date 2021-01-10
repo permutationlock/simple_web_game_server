@@ -138,6 +138,14 @@ namespace jwt_game_server {
       std::chrono::milliseconds t)
         : super(v), m_timestep(t) {}
 
+    void reset() {
+      super::reset();
+
+      lock_guard<mutex> guard(m_game_list_lock);
+      m_player_games.clear();
+      m_games.clear();
+    }
+
     void set_timestep(std::chrono::milliseconds t) {
       if(!super::is_running()) {
         m_timestep = t;
@@ -188,13 +196,14 @@ namespace jwt_game_server {
     }
 
   private:
-    void process_message(player_id id, const std::string& text) {
+    void process_message(connection_hdl hdl, player_id id,
+        const std::string& text) {
       {
         lock_guard<mutex> guard(m_game_list_lock);
         m_player_games[id]->process_player_update(id, text);
         send_messages(m_player_games[id]);
       }
-      super::process_message(id, text);
+      super::process_message(hdl, id, text);
     }
 
     void player_connect(connection_hdl hdl, player_id main_id,
@@ -206,9 +215,9 @@ namespace jwt_game_server {
         return;
       }
 
+      lock_guard<mutex> game_guard(m_game_list_lock);
       super::player_connect(hdl, main_id, data);
 
-      lock_guard<mutex> game_guard(m_game_list_lock);
       if(m_player_games.count(main_id)<1) {
         auto gs = make_shared<
             game_instance<game_data, json_traits>
@@ -218,23 +227,9 @@ namespace jwt_game_server {
         for(player_id id : d.get_player_list()) {
           m_player_games[id] = gs;
         }
-
-        m_player_games[main_id]->connect(main_id, hdl);
-      } else {
-        if(m_player_games[main_id]->is_connected(main_id)) {
-          m_player_games[main_id]->disconnect(main_id);
-          connection_hdl hdl =
-            m_player_games[main_id]->get_connection(main_id);
-          
-          super::close_connection(hdl, "player opened redundant connection");
-
-          spdlog::debug("terminating redundant connection for player {}",
-            main_id);
-        }
-
-        m_player_games[main_id]->connect(main_id, hdl);
       }
 
+      m_player_games[main_id]->connect(main_id, hdl);
       send_messages(m_player_games[main_id]);
     }
 
@@ -248,7 +243,8 @@ namespace jwt_game_server {
       return id;
     }
 
-    // send all available messages for a given game
+    // send all available messages for a given game (assumes m_game_lock
+    // acquired)
     void send_messages(game_ptr game) {
       typename game_instance<game_data, json_traits>::message msg;
       while(game->get_message(msg)) {

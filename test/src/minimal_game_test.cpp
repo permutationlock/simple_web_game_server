@@ -57,8 +57,8 @@ TEST_CASE("matchmaking data game should track list of players and dump to json")
   using json = nlohmann::json;
   using std::vector;
 
-  using player_id = minimal_matchmaking_data::player_id;
-  using game = minimal_matchmaking_data::game;
+  using player_id = minimal_matchmaker::player_id;
+  using game = minimal_matchmaker::game;
 
   SUBCASE("empty game should have an empty list") {
     game g{vector<player_id>{}};
@@ -76,26 +76,28 @@ TEST_CASE("matchmaking data game should track list of players and dump to json")
   }
 }
 
-TEST_CASE("matchmaking data match function should pair players in order") {
+TEST_CASE("matchmaking data match function should pair players") {
   using std::set;
   using std::map;
   using std::vector;
 
-  using player_id = minimal_matchmaking_data::player_id;
-  using player_data = minimal_matchmaking_data::player_data;
-  using game = minimal_matchmaking_data::game;
+  using player_id = minimal_matchmaker::player_id;
+  using player_data = minimal_matchmaker::player_data;
+  using game = minimal_matchmaker::game;
 
+  minimal_matchmaker matchmaker;
   map<player_id, player_data> player_map;
+  set<player_id> altered_players;
 
   SUBCASE("empty map should return empty list of games") {
-    vector<game> games = minimal_matchmaking_data::match(player_map);
+    vector<game> games = matchmaker.match(player_map, altered_players);
     CHECK(games.size() == 0);
   }
 
   SUBCASE("map with two players should return one game") {
     player_map[43] = player_data{};
     player_map[102] = player_data{};
-    vector<game> games = minimal_matchmaking_data::match(player_map);
+    vector<game> games = matchmaker.match(player_map, altered_players);
     CHECK(games.size() == 1);
 
     set<player_id> players;
@@ -118,7 +120,7 @@ TEST_CASE("matchmaking data match function should pair players in order") {
     player_map[741] = player_data{};
     player_map[907] = player_data{};
     player_map[2001] = player_data{};
-    vector<game> games = minimal_matchmaking_data::match(player_map);
+    vector<game> games = matchmaker.match(player_map, altered_players);
     CHECK(games.size() == 3);
 
     set<player_id> players;
@@ -134,17 +136,17 @@ TEST_CASE("matchmaking data match function should pair players in order") {
   }
 
   SUBCASE("we should not be able to match an empty player map") {
-    CHECK(minimal_matchmaking_data::can_match(player_map) == false);
+    CHECK(matchmaker.can_match(player_map, altered_players) == false);
   }
 
   SUBCASE("we should not be able to match a player map with one player") {
     player_map[513] = player_data{};
-    CHECK(minimal_matchmaking_data::can_match(player_map) == false);
+    CHECK(matchmaker.can_match(player_map, altered_players) == false);
   }
 
   SUBCASE("we should be able to match a player map with two player") {
     player_map[223] = player_data{};
     player_map[45112] = player_data{};
-    CHECK(minimal_matchmaking_data::can_match(player_map) == true);
+    CHECK(matchmaker.can_match(player_map, altered_players) == true);
   }
 }

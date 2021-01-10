@@ -328,6 +328,122 @@ TEST_CASE("players should interact with the server with no errors") {
     }
   }
 
+  SUBCASE("only most recent client with a given token id should remain open") {
+    gs.set_timestep(100000ms);
+
+    server_thr = std::thread{
+        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+      };
+
+    while(!gs.is_running()) {
+      std::this_thread::sleep_for(10ms);
+    }
+
+    CHECK(oss.str() == std::string{""});
+   
+    msg_process_thr = std::thread{
+        bind(&minimal_game_server::process_messages,&gs)
+      };
+
+    std::this_thread::sleep_for(100ms);
+
+    CHECK(oss.str() == std::string{""});
+
+    game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
+
+    PLAYER_COUNT = 72;
+    const player_id PLAYER_ID = 148;
+
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      player_id player = PLAYER_ID;
+      std::vector<player_id> players = { player };
+      nlohmann::json json_data = { { "players", players } };
+
+      tokens.push_back(jwt::create<nlohmann_traits>()
+        .set_issuer(issuer)
+        .set_payload_claim("id", claim(player))
+        .set_payload_claim("data", claim(json_data))
+        .sign(jwt::algorithm::hs256{secret}));
+    }
+
+    create_clients<player_id, minimal_game_client, test_client_data>(
+        clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
+      );
+
+    // long pause here because it may take 1-2ms per client to create
+    std::this_thread::sleep_for(3000ms);
+
+    std::size_t conn_count = 0;
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      if(client_data_list[i].is_connected) {
+        conn_count++;
+      }
+    }
+
+    CHECK(conn_count == 1);
+    CHECK(gs.get_player_count() == 1);
+    CHECK(client_data_list.back().is_connected == true);
+    CHECK(oss.str() == std::string{""}); 
+  }
+
+  SUBCASE("players should be disconnected when games end") {
+    // game loop set to 10ms so games timeout during the 1s pause
+    gs.set_timestep(10ms);
+
+    server_thr = std::thread{
+        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+      };
+
+    while(!gs.is_running()) {
+      std::this_thread::sleep_for(10ms);
+    }
+
+    CHECK(oss.str() == std::string{""});
+   
+    msg_process_thr = std::thread{
+        bind(&minimal_game_server::process_messages,&gs)
+      };
+
+    std::this_thread::sleep_for(100ms);
+
+    CHECK(oss.str() == std::string{""});
+
+    game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
+
+    PLAYER_COUNT = 87;
+
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      player_id player = i;
+      std::vector<player_id> players = { player };
+      nlohmann::json json_data = { { "players", players } };
+
+      tokens.push_back(jwt::create<nlohmann_traits>()
+        .set_issuer(issuer)
+        .set_payload_claim("id", claim(player))
+        .set_payload_claim("data", claim(json_data))
+        .sign(jwt::algorithm::hs256{secret}));
+    }
+
+    create_clients<player_id, minimal_game_client, test_client_data>(
+        clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
+      );
+
+    // long pause here since some timeouts need to resolve
+    std::this_thread::sleep_for(1000ms);
+
+
+    std::size_t running_count = 0;
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      if(clients[i].is_running()) {
+        running_count++;
+      }
+    }
+
+    CHECK(running_count == 0);
+    CHECK(gs.get_player_count() == 0);
+    CHECK(oss.str() == std::string{""});
+  }
+
   // end of test cleanup
 
   for(std::size_t i = 0; i < PLAYER_COUNT; i++) {

@@ -7,11 +7,13 @@
 using json = nlohmann::json;
 
 #include <vector>
+#include <set>
 #include <map>
 #include <queue>
 
 using std::vector;
 using std::map;
+using std::set;
 using std::queue;
 
 struct minimal_player_traits {
@@ -85,7 +87,8 @@ private:
   bool m_valid;
 };
 
-struct minimal_matchmaking_data {
+class minimal_matchmaker {
+public:
   using player_traits = minimal_player_traits;
   using player_id = player_traits::player_id;
 
@@ -103,11 +106,13 @@ struct minimal_matchmaking_data {
     json data;
   };
 
-  static bool can_match(const map<player_id, player_data>& player_map) {
+  bool can_match(const map<player_id, player_data>& player_map,
+      const set<player_id>& altered_players) {
     return player_map.size() >= 2;
   }
 
-  static vector<game> match(const map<player_id, player_data>& player_map) {
+  vector<game> match(const map<player_id, player_data>& player_map,
+      const set<player_id>& altered_players) {
     vector<player_id> pl;
     vector<game> game_list;
 
@@ -121,6 +126,9 @@ struct minimal_matchmaking_data {
 
     return game_list;
   }
+
+  // called if a matchmade game was cancelled
+  void cancel_game(const game& g) {}
 };
 
 #endif // MINIMAL_GAME_HPP

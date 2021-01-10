@@ -30,7 +30,7 @@ TEST_CASE("players should interact with the server with no errors") {
     >;
 
   using minimal_matchmaking_server = jwt_game_server::matchmaking_server<
-      minimal_matchmaking_data,
+      minimal_matchmaker,
       jwt::default_clock,
       nlohmann_traits,
       asio_no_logs
@@ -53,7 +53,7 @@ TEST_CASE("players should interact with the server with no errors") {
     std::string last_message;
   };
 
-  using player_id = minimal_matchmaking_data::player_id;
+  using player_id = minimal_matchmaker::player_id;
   using json = nlohmann::json;
   using claim = jwt::basic_claim<nlohmann_traits>;
 
@@ -75,12 +75,11 @@ TEST_CASE("players should interact with the server with no errors") {
   std::string uri = std::string{"ws://localhost:"}
     + std::to_string(SERVER_PORT);
 
-  auto sign_game = [=](player_id id, const json& data){ 
-      return jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(id))
-        .set_payload_claim("data", claim(data))
-        .sign(jwt::algorithm::hs256{secret});
+  auto sign_game = [](player_id id, const json& data){
+      json temp;
+      temp["id"] = id;
+      temp["data"] = data;
+      return temp.dump();
     };
 
   minimal_matchmaking_server mms{
@@ -149,7 +148,9 @@ TEST_CASE("players should interact with the server with no errors") {
   SUBCASE("matchmaker should match two players together") {
     PLAYER_COUNT = 2;
 
+    std::set<player_id> player_list;
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      player_list.insert(i);
       player_id player = i;
       nlohmann::json json_data{json::value_t::object};
 
@@ -166,16 +167,37 @@ TEST_CASE("players should interact with the server with no errors") {
 
     std::this_thread::sleep_for(1000ms);
 
-    json game_data{ { "players" , std::vector<player_id>{0, 1} } };
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      std::string message = sign_game(i, game_data);
-      CHECK(client_data_list[i].last_message == message);
+      json game_data;
+      try {
+        nlohmann_traits::parse(game_data, client_data_list[i].last_message);
+      } catch(std::exception& e) {}
+
+      player_id id;
+      try {
+        id = game_data["id"].get<player_id>();
+      } catch(std::exception& e) {}
+
+      CHECK(id == i);
+
+      std::set<player_id> game_player_list;
+      try {
+        std::vector<player_id> pl{
+            game_data["data"]["players"].get<std::vector<player_id> >()
+          };
+
+        for(player_id id : pl) {
+          game_player_list.insert(id);
+        }
+      } catch(std::exception& e) {}
+
+      CHECK(game_player_list == player_list);
     }
 
     CHECK(oss.str() == std::string{""});
   }
 
-  SUBCASE("matchmaker should match all players together") {
+  SUBCASE("matchmaker should match an even number players all into games") {
     PLAYER_COUNT = 50;
 
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
@@ -195,22 +217,40 @@ TEST_CASE("players should interact with the server with no errors") {
 
     std::this_thread::sleep_for(1000ms);
 
-    std::map<player_id, std::vector<player_id> > player_vec_map;
-    std::vector<player_id> players;
+    std::map<player_id, player_id> opponent_map;
+
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      players.push_back(i);
-      if(players.size() == 2) {
-        for(player_id id : players) {
-          player_vec_map[id] = players;
+      player_id id;
+      std::vector<player_id> player_list;
+      try {
+        json game_data;
+        nlohmann_traits::parse(game_data, client_data_list[i].last_message);
+        id = game_data["id"].get<player_id>();
+        player_list =
+          game_data["data"]["players"].get<std::vector<player_id> >();
+      } catch(std::exception& e) {}
+
+      CHECK(id == i);
+      CHECK(player_list.size() == 2);
+
+      if(player_list.size() == 2) {
+        player_id p1 = player_list.front(); 
+        player_id p2 = player_list.back(); 
+        if(opponent_map.count(p1) == 0) {
+          opponent_map[p1] = p2;
+        } else {
+          CHECK(opponent_map[p1] == p2);
         }
-        players.clear();
+        if(opponent_map.count(p2) == 0) {
+          opponent_map[p2] = p1;
+        } else {
+          CHECK(opponent_map[p2] == p1);
+        }
       }
     }
 
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      json game_data{ { "players" , player_vec_map[i] } };
-      std::string message = sign_game(i, game_data);
-      CHECK(client_data_list[i].last_message == message);
+      CHECK(opponent_map.count(i) > 0);
     }
 
     CHECK(oss.str() == std::string{""});

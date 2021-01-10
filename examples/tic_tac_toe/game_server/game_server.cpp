@@ -29,7 +29,7 @@ int main() {
     .with_issuer("tic_tac_toe_matchmaker");
 
   // create our main server to manage player connection and matchmaking
-  ttt_server gs(verifier);
+  ttt_server gs(verifier, 500ms);
 
   // any of the processes below can be managed by multiple threads for higher
   // performance on multi-threaded machines

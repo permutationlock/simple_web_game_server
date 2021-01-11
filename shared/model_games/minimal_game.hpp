@@ -112,7 +112,7 @@ public:
   }
 
   vector<game> match(const map<player_id, player_data>& player_map,
-      const set<player_id>& altered_players) {
+      const set<player_id>& altered_players, long delta_time) {
     vector<player_id> pl;
     vector<game> game_list;
 
@@ -127,8 +127,8 @@ public:
     return game_list;
   }
 
-  // called if a matchmade game was cancelled
-  void cancel_game(const game& g) {}
+  // called by matchmaker to notify if any matched games were cancelled
+  void cancel_games(const vector<game>& game_list) {}
 };
 
 #endif // MINIMAL_GAME_HPP

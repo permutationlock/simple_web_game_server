@@ -280,6 +280,38 @@ TEST_CASE("players should interact with the server with no errors") {
     CHECK(oss.str() == std::string{""});
   }
 
+  SUBCASE("only most recent client with given id should be matched") {
+    PLAYER_COUNT = 3;
+
+    tokens.push_back(jwt::create<nlohmann_traits>()
+      .set_issuer(issuer)
+      .set_payload_claim("id", claim(player_id{0}))
+      .set_payload_claim("data", claim(json{json::value_t::object}))
+      .sign(jwt::algorithm::hs256{secret}));
+
+    for(std::size_t i = 0; i < PLAYER_COUNT-1; i++) {
+      player_id player = i;
+      nlohmann::json json_data{json::value_t::object};
+
+      tokens.push_back(jwt::create<nlohmann_traits>()
+        .set_issuer(issuer)
+        .set_payload_claim("id", claim(player))
+        .set_payload_claim("data", claim(json_data))
+        .sign(jwt::algorithm::hs256{secret}));
+    }
+
+    create_clients<player_id, minimal_client, test_client_data>(
+        clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT, 100
+      );
+
+    std::this_thread::sleep_for(1000ms);
+
+    CHECK(mms.get_player_count() == 0);
+    CHECK(client_data_list[0].last_message == "");
+    CHECK(client_data_list[1].last_message != "");
+    CHECK(oss.str() == std::string{""});
+  }
+
   // end of test cleanup
 
   for(std::size_t i = 0; i < PLAYER_COUNT; i++) {

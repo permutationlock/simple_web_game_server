@@ -204,7 +204,6 @@ namespace jwt_game_server {
         } else if(a.type == OUT_MESSAGE) {
           spdlog::trace("processing OUT_MESSAGE action");
           try {
-            lock_guard<mutex> guard(m_connection_lock);
             m_server.send(a.hdl, a.msg, websocketpp::frame::opcode::text);
           } catch (std::exception& e) {
             spdlog::debug(
@@ -214,7 +213,6 @@ namespace jwt_game_server {
               );
           }
         } else if(a.type == CLOSE_CONNECTION) { 
-          lock_guard<mutex> guard(m_connection_lock);
           try {
             m_server.close(
                 a.hdl,
@@ -396,9 +394,13 @@ namespace jwt_game_server {
         std::owner_less<connection_hdl>
       > m_connection_ids;
     map<player_id, connection_hdl> m_id_connections;
+
+    // m_connection_lock guards the members m_id_connections, m_connection_ids
     mutex m_connection_lock;
 
     queue<action> m_actions;
+
+    // m_action_lock guards the member m_actions
     mutex m_action_lock;
     condition_variable m_action_cond;
   };

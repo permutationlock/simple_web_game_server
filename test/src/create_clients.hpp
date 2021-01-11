@@ -12,14 +12,17 @@
 // client_threads are all empty vectors which will be filled by this call.
 // The vector of tokens is expected to contain player_count JWT token strings.
 // Clients will connect using their corresponding token to the server at the
-// provided uri.
+// provided uri. The final wait_time parameter gives the option of waiting a
+// set number of milliseconds between creating each client; use this in the
+// case that it is important that your clients connect in order of creation.
 template<typename player_id, typename game_client, typename client_data>
 inline void create_clients(
       std::vector<game_client>& clients, std::vector<client_data>& client_data_list,
       std::vector<std::thread>& client_threads,
       const std::vector<std::string>& tokens,
       const std::string& uri,
-      std::size_t player_count
+      std::size_t player_count,
+      long wait_time = 0
     ) {
   using namespace std::chrono_literals;
   using std::placeholders::_1;
@@ -50,6 +53,7 @@ inline void create_clients(
     while(!clients[i].is_running()) {
       std::this_thread::sleep_for(1ms);
     }
+    std::this_thread::sleep_for(std::chrono::milliseconds(wait_time));
 
     client_threads.push_back(std::move(client_thread));
   }

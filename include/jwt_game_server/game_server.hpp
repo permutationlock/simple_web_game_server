@@ -254,6 +254,8 @@ namespace jwt_game_server {
 
     // member variables
     std::chrono::milliseconds m_timestep;
+
+    // m_game_list_lock guards the members m_player_games and m_games
     mutex m_game_list_lock;
 
     map<

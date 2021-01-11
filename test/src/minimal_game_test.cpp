@@ -53,7 +53,7 @@ TEST_CASE("minimal games should be done and not have messages") {
   CHECK(one_player.has_message() == false);
 }
 
-TEST_CASE("matchmaking data game should track list of players and dump to json") {
+TEST_CASE("matchmaking data game should track player list and data json") {
   using json = nlohmann::json;
   using std::vector;
 
@@ -144,7 +144,7 @@ TEST_CASE("matchmaking data match function should pair players") {
     CHECK(matchmaker.can_match(player_map, altered_players) == false);
   }
 
-  SUBCASE("we should be able to match a player map with two player") {
+  SUBCASE("we should be able to match a player map with two players") {
     player_map[223] = player_data{};
     player_map[45112] = player_data{};
     CHECK(matchmaker.can_match(player_map, altered_players) == true);

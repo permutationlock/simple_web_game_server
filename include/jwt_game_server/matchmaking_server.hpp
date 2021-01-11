@@ -79,8 +79,18 @@ namespace jwt_game_server {
             std::chrono::high_resolution_clock::now() - time_start);
 
         if(delta_time >= m_timestep) {
-          vector<typename matchmaker::game> games
-            = m_matchmaker.match(m_player_data, m_altered_players);
+          vector<typename matchmaker::game> games;
+          vector<typename matchmaker::game> cancelled_games;
+
+          {
+            auto pd_copy{m_player_data};
+            auto ap_copy{m_altered_players};
+            m_altered_players.clear();
+
+            lock.unlock();
+
+            games = m_matchmaker.match(pd_copy, ap_copy, delta_time.count());
+          }
 
           for(const auto& g : games) {
             spdlog::debug("matched game: {}", g.data.dump());
@@ -110,16 +120,20 @@ namespace jwt_game_server {
                 super::close_connection(hdl, "matchmaking complete");
               }
             } else {
-              m_matchmaker.cancel_game(g);
+              cancelled_games.push_back(g);
             }
           }
 
+          lock.lock();
           m_altered_players.clear();
+          m_matchmaker.cancel_games(cancelled_games);
           time_start = std::chrono::high_resolution_clock::now();
+          spdlog::debug("matching completed with {}ms of timestep remaining",
+            (m_timestep-delta_time).count());
         }
 
         lock.unlock();
-        std::this_thread::sleep_for(std::min(100ms, m_timestep-delta_time));
+        std::this_thread::sleep_for(std::min(1ms, m_timestep-delta_time));
       }
     }
 
@@ -163,9 +177,10 @@ namespace jwt_game_server {
     }
 
     player_id player_disconnect(connection_hdl hdl) {
-      player_id id = super::player_disconnect(hdl);
+      player_id id;
       {
         lock_guard<mutex> guard(m_match_lock);
+        id = super::player_disconnect(hdl);
         m_player_data.erase(id);
         m_altered_players.insert(id);
       }
@@ -177,6 +192,7 @@ namespace jwt_game_server {
     matchmaker m_matchmaker;
     std::chrono::milliseconds m_timestep;
 
+    // m_match_lock guards the members m_player_data and m_altered_players
     mutex m_match_lock;
     condition_variable m_match_cond;
 

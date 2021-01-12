@@ -87,7 +87,6 @@ namespace jwt_game_server {
     }
 
     void disconnect() {
-      lock_guard<mutex> guard(m_connection_lock);
       if(m_is_running) {
         try {
           spdlog::trace("closing client connection");
@@ -102,7 +101,6 @@ namespace jwt_game_server {
     }
 
     void send(const std::string& msg) {
-      lock_guard<mutex> guard(m_connection_lock);
       if(m_is_running) {
         try {
           m_connection->send(
@@ -175,8 +173,6 @@ namespace jwt_game_server {
     }
 
     // member variables
-    mutex m_connection_lock;
-
     ws_client m_client;
     typename ws_client::connection_ptr m_connection;
     std::atomic<bool> m_is_running;

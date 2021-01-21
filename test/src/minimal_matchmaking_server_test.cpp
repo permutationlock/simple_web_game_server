@@ -22,6 +22,28 @@
 #include "constants.hpp"
 #include "create_clients.hpp"
 
+// create JWTs matchmaking auth tokens for the given players
+void create_matchmaker_tokens(
+    std::vector<std::string>& tokens,
+    const std::vector<minimal_game::player_traits::id> player_list,
+    const std::string& secret,
+    const std::string& issuer
+  )
+{
+  using json = nlohmann::json;
+  using claim = jwt::basic_claim<nlohmann_traits>;
+
+  for(auto& id : player_list) {
+    tokens.push_back(jwt::create<nlohmann_traits>()
+        .set_issuer(issuer)
+        .set_payload_claim("pid", claim(id.player))
+        .set_payload_claim("sid", claim(id.session))
+        .set_payload_claim("data", claim(json{json::value_t::object}))
+        .sign(jwt::algorithm::hs256{secret})
+      );
+  }
+}
+
 TEST_CASE("players should interact with the server with no errors") {
   using namespace std::chrono_literals;
 
@@ -53,16 +75,17 @@ TEST_CASE("players should interact with the server with no errors") {
     std::string last_message;
   };
 
-  using player_id = minimal_matchmaker::player_id;
+  using combined_id = minimal_game::player_traits::id;
+  using player_id = combined_id::player_id;
+  using session_id = combined_id::session_id;
   using json = nlohmann::json;
-  using claim = jwt::basic_claim<nlohmann_traits>;
 
   // setup logging sink to track errors
   std::ostringstream oss;
-  auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(oss);
-  auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
-  spdlog::set_default_logger(logger);
-  spdlog::set_level(spdlog::level::err);
+  //auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(oss);
+  //auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
+  //spdlog::set_default_logger(logger);
+  spdlog::set_level(spdlog::level::trace);
 
   // create a jwt verifier
   const std::string secret = "secret";
@@ -75,17 +98,17 @@ TEST_CASE("players should interact with the server with no errors") {
   std::string uri = std::string{"ws://localhost:"}
     + std::to_string(SERVER_PORT);
 
-  auto sign_game = [](player_id id, const json& data){
+  auto sign_game = [](const combined_id& id, const json& data){
       json temp;
-      temp["id"] = id;
+      temp["pid"] = id.player;
+      temp["sid"] = id.session;
       temp["data"] = data;
       return temp.dump();
     };
 
   minimal_matchmaking_server mms{
       verifier, 
-      sign_game,
-      100ms
+      sign_game
     };
   std::thread server_thr, match_thr, msg_process_thr;
 
@@ -104,7 +127,7 @@ TEST_CASE("players should interact with the server with no errors") {
     };
 
   match_thr = std::thread{
-      bind(&minimal_matchmaking_server::match_players, &mms)
+      bind(&minimal_matchmaking_server::match_players, &mms, 100ms)
     };
 
   std::this_thread::sleep_for(100ms);
@@ -118,18 +141,10 @@ TEST_CASE("players should interact with the server with no errors") {
   std::vector<std::string> tokens;
 
   SUBCASE("matchmaker should not match until two players connect") {
-    PLAYER_COUNT = 1;
+    std::vector<combined_id> player_list{ { 82, 0 } };
+    PLAYER_COUNT = player_list.size();
 
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_id player = i;
-      nlohmann::json json_data{json::value_t::object};
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
     create_clients<player_id, minimal_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
@@ -146,20 +161,10 @@ TEST_CASE("players should interact with the server with no errors") {
   }
 
   SUBCASE("matchmaker should match two players together") {
-    PLAYER_COUNT = 2;
+    std::vector<combined_id> player_list{ { 31, 4}, { 82123, 5 } };
+    PLAYER_COUNT = player_list.size();
 
-    std::set<player_id> player_list;
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_list.insert(i);
-      player_id player = i;
-      nlohmann::json json_data{json::value_t::object};
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
     create_clients<player_id, minimal_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
@@ -175,10 +180,10 @@ TEST_CASE("players should interact with the server with no errors") {
 
       player_id id;
       try {
-        id = game_data["id"].get<player_id>();
+        id = game_data["pid"].get<player_id>();
       } catch(std::exception& e) {}
 
-      CHECK(id == i);
+      CHECK(id == player_list[i]);
 
       std::set<player_id> game_player_list;
       try {
@@ -191,25 +196,21 @@ TEST_CASE("players should interact with the server with no errors") {
         }
       } catch(std::exception& e) {}
 
-      CHECK(game_player_list == player_list);
+      for(const combined_id& id : player_list) {
+        CHECK(game_player_list.count(id.player) > 0);
+      }
     }
 
     CHECK(oss.str() == std::string{""});
   }
 
   SUBCASE("matchmaker should match an even number players all into games") {
-    PLAYER_COUNT = 50;
+    std::vector<combined_id> player_list{
+        { 9813, 1 }, { 23, 2 }, { 85231, 3 }, { 753, 4 }
+      };
+    PLAYER_COUNT = player_list.size();
 
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_id player = i;
-      nlohmann::json json_data{json::value_t::object};
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
     create_clients<player_id, minimal_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
@@ -217,58 +218,50 @@ TEST_CASE("players should interact with the server with no errors") {
 
     std::this_thread::sleep_for(1000ms);
 
-    std::map<player_id, player_id> opponent_map;
+    std::map<player_id, session_id> session_map;
+    std::map<session_id, std::set<player_id> > pl_map;
 
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_id id;
-      std::vector<player_id> player_list;
+      player_id pid;
+      session_id sid;
+      std::vector<player_id> pid_list;
       try {
         json game_data;
         nlohmann_traits::parse(game_data, client_data_list[i].last_message);
-        id = game_data["id"].get<player_id>();
-        player_list =
+        pid = game_data["pid"].get<player_id>();
+        sid = game_data["sid"].get<session_id>();
+        pid_list =
           game_data["data"]["players"].get<std::vector<player_id> >();
+        session_map[pid] = sid;
+        pl_map[sid].insert(pid);
       } catch(std::exception& e) {}
 
-      CHECK(id == i);
-      CHECK(player_list.size() == 2);
-
-      if(player_list.size() == 2) {
-        player_id p1 = player_list.front(); 
-        player_id p2 = player_list.back(); 
-        if(opponent_map.count(p1) == 0) {
-          opponent_map[p1] = p2;
-        } else {
-          CHECK(opponent_map[p1] == p2);
-        }
-        if(opponent_map.count(p2) == 0) {
-          opponent_map[p2] = p1;
-        } else {
-          CHECK(opponent_map[p2] == p1);
-        }
-      }
+      CHECK(pid == player_list[i].player);
+      CHECK(sid == player_list[i].session);
+      CHECK(pid_list.size() == 2);
     }
 
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      CHECK(opponent_map.count(i) > 0);
+      CHECK(session_map.count(i) > 0);
     }
+
+    std::size_t total_player_count = 0;
+    for(auto& sid_pl_pair : pl_map) {
+      CHECK(sid_pl_pair.second.size() == 2);
+      total_player_count += sid_pl_pair.second.size();
+    }
+
+    CHECK(total_player_count == PLAYER_COUNT);
 
     CHECK(oss.str() == std::string{""});
   }
 
   SUBCASE("matchmaker should leave a player unmatched if uneven player count") {
-    PLAYER_COUNT = 101;
+    std::vector<combined_id> player_list{ { 9, 0 }, { 65, 1 }, { 41, 2 },
+      { 701, 3 }, { 83, 4 } };
+    PLAYER_COUNT = player_list.size();
 
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_id player = i;
-      nlohmann::json json_data{json::value_t::object};
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
     create_clients<player_id, minimal_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
@@ -281,24 +274,10 @@ TEST_CASE("players should interact with the server with no errors") {
   }
 
   SUBCASE("only most recent client with given id should be matched") {
-    PLAYER_COUNT = 3;
+    std::vector<combined_id> player_list{ { 53, 10 }, { 53, 10 }, { 3, 11 } };
+    PLAYER_COUNT = player_list.size();
 
-    tokens.push_back(jwt::create<nlohmann_traits>()
-      .set_issuer(issuer)
-      .set_payload_claim("id", claim(player_id{0}))
-      .set_payload_claim("data", claim(json{json::value_t::object}))
-      .sign(jwt::algorithm::hs256{secret}));
-
-    for(std::size_t i = 0; i < PLAYER_COUNT-1; i++) {
-      player_id player = i;
-      nlohmann::json json_data{json::value_t::object};
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
     create_clients<player_id, minimal_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT, 100

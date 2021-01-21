@@ -11,6 +11,7 @@ using json = nlohmann::json;
 #include <queue>
 
 using std::vector;
+using std::set;
 using std::map;
 using std::queue;
 
@@ -273,6 +274,23 @@ public:
     }
   }
 
+  json get_state(player_id id) const {
+    bool isx = (id == m_player_list.front());
+
+    json game_json;
+    game_json["type"] = "game";
+    game_json["board"] = m_board.get_board();
+    game_json["players"] = m_player_list;  
+    game_json["xmove"] = m_xmove;
+    game_json["moves"] = m_move_list;
+    game_json["times"] = std::vector<long>{ m_xtime, m_otime };
+    game_json["state"] = m_board.get_state() + m_state;
+    game_json["done"] = is_done();
+    game_json["your_turn"] = isx ? m_xmove : !m_xmove;
+ 
+    return game_json;
+  }
+
   bool is_done() const {
     return m_board.is_done() || m_game_over;
   }
@@ -309,15 +327,7 @@ private:
   json get_game_state(player_id id) const {
     bool isx = (id == m_player_list.front());
 
-    json game_json;
-
-    game_json["type"] = "game";
-    game_json["board"] = m_board.get_board();
-    game_json["players"] = m_player_list;  
-    game_json["xmove"] = m_xmove;
-    game_json["moves"] = m_move_list;
-    game_json["state"] = m_board.get_state() + m_state;
-    game_json["done"] = is_done();
+    json game_json{get_state(id)};
     game_json["your_turn"] = isx ? m_xmove : !m_xmove;
  
     return game_json;
@@ -329,8 +339,8 @@ private:
     json game_json;
 
     game_json["type"] = "time";
-    game_json["your_time"] = (isx ? m_xtime : m_otime) / 1000;
-    game_json["opp_time"] = (isx ? m_otime : m_xtime) / 1000; 
+    game_json["your_time"] = (isx ? m_xtime : m_otime);
+    game_json["opp_time"] = (isx ? m_otime : m_xtime); 
     return game_json;
   }
 
@@ -360,8 +370,8 @@ private:
 
 struct tic_tac_toe_matchmaking_data {
 public: 
-  typedef tic_tac_toe_player_traits player_traits;
-  typedef tic_tac_toe_player_traits::player_id player_id;
+  using player_traits = tic_tac_toe_player_traits;
+  using player_id = tic_tac_toe_player_traits::player_id;
 
   struct player_data {
     player_data() {}
@@ -370,7 +380,7 @@ public:
 
   struct game {
     game(const vector<player_id>& pl) : player_list(pl) { 
-      data["players"] = player_list;  
+      data["players"] = player_list;
       data["time"] = 10000;
     }
 
@@ -378,11 +388,13 @@ public:
     json data;
   };
 
-  static bool can_match(const map<player_id, player_data>& player_map) {
+  bool can_match(const map<player_id, player_data>& player_map,
+      const set<player_id>& altered_players) {
     return player_map.size() >= 2;
   }
 
-  static vector<game> match(const map<player_id, player_data>& player_map) {
+  vector<game> match(const map<player_id, player_data>& player_map,
+      const set<player_id>& altered_players, long delta_time) {
     vector<player_id> pl;
     vector<game> game_list;
 
@@ -395,6 +407,10 @@ public:
     }
 
     return game_list;
+  }
+
+  json get_cancel_data(player_id id, const player_data& data) {
+    return game{std::vector<player_id>{}}.data;
   }
 };
 

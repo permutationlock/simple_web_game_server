@@ -22,6 +22,43 @@
 #include "constants.hpp"
 #include "create_clients.hpp"
 
+// create JWTs for games between the given players
+// assumes that player_list.size() is divisible by GAME_SIZE
+void create_game_tokens(
+    std::vector<std::string>& tokens,
+    const std::vector<minimal_game::player_traits::id::player_id> player_list,
+    const std::string& secret,
+    const std::string& issuer,
+    std::size_t GAME_SIZE
+  )
+{
+  using combined_id = minimal_game::player_traits::id;
+  using player_id = combined_id::player_id;
+  using session_id = combined_id::session_id;
+  using claim = jwt::basic_claim<nlohmann_traits>;
+  session_id sid = 0;
+
+  // sign game tokens sorting players into games of GAME_SIZE players each
+  std::vector<player_id> players;
+  for(player_id pid : player_list) {
+    players.push_back(pid);
+    if(players.size() == GAME_SIZE) {
+      for(player_id pid : players) {
+        nlohmann::json json_data = { { "players", players } };
+
+        tokens.push_back(jwt::create<nlohmann_traits>()
+          .set_issuer(issuer)
+          .set_payload_claim("pid", claim(pid))
+          .set_payload_claim("sid", claim(sid))
+          .set_payload_claim("data", claim(json_data))
+          .sign(jwt::algorithm::hs256{secret}));
+      }
+      players.clear();
+      sid++;
+    }
+  }
+}
+
 TEST_CASE("players should interact with the server with no errors") {
   using namespace std::chrono_literals;
 
@@ -46,22 +83,22 @@ TEST_CASE("players should interact with the server with no errors") {
       is_connected = false;
     }
     void on_message(const std::string& message) {
-      last_message = message;
+      messages.push_back(message);
     }
 
     bool is_connected;
-    std::string last_message;
+    std::vector<std::string> messages;
   };
 
-  using player_id = minimal_game::player_id;
-  using claim = jwt::basic_claim<nlohmann_traits>;
+  using combined_id = minimal_game::player_traits::id;
+  using player_id = combined_id::player_id;
 
   // setup logging sink to track errors
   std::ostringstream oss;
-  auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(oss);
-  auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
-  spdlog::set_default_logger(logger);
-  spdlog::set_level(spdlog::level::err);
+  //auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(oss);
+  //auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
+  //spdlog::set_default_logger(logger);
+  spdlog::set_level(spdlog::level::trace);
 
   // create a jwt verifier
   std::string secret = "secret";
@@ -74,7 +111,15 @@ TEST_CASE("players should interact with the server with no errors") {
   std::string uri = std::string{"ws://localhost:"}
     + std::to_string(SERVER_PORT);
 
-  minimal_game_server gs{verifier};
+  auto sign_result = [](combined_id id, const json& data){
+      json temp;
+      temp["pid"] = id.player;
+      temp["sid"] = id.session;
+      temp["data"] = data;
+      return temp.dump();
+    };
+
+  minimal_game_server gs{verifier, sign_result};
   std::thread server_thr, game_thr, msg_process_thr;
   std::size_t PLAYER_COUNT;
   std::vector<minimal_game_client> clients;
@@ -82,42 +127,34 @@ TEST_CASE("players should interact with the server with no errors") {
   std::vector<std::thread> client_threads;
   std::vector<std::string> tokens;
 
-  SUBCASE("games start when players connect and die when they leave") {
-    gs.set_timestep(100000ms);
+  server_thr = std::thread{
+      bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+    };
 
-    server_thr = std::thread{
-        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+  while(!gs.is_running()) {
+    std::this_thread::sleep_for(10ms);
+  }
+
+  CHECK(oss.str() == std::string{""});
+
+  msg_process_thr = std::thread{
+      bind(&minimal_game_server::process_messages, &gs)
+    };
+
+  std::this_thread::sleep_for(100ms);
+
+  CHECK(oss.str() == std::string{""});
+
+  SUBCASE("games start when players connect") {
+    game_thr = std::thread{
+        bind(&minimal_game_server::update_games, &gs, 100s)
       };
 
-    while(!gs.is_running()) {
-      std::this_thread::sleep_for(10ms);
-    }
-
-    CHECK(oss.str() == std::string{""});
-   
-    msg_process_thr = std::thread{
-        bind(&minimal_game_server::process_messages,&gs)
-      };
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
-
-    PLAYER_COUNT = 121;
-
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_id player = i;
-      std::vector<player_id> players = { player };
-      nlohmann::json json_data = { { "players", players } };
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    std::vector<player_id> player_list = { 83, 2, 17, 339 };
+    PLAYER_COUNT = player_list.size();
+    const std::size_t GAME_SIZE = 2;
+    
+    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
 
     create_clients<player_id, minimal_game_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
@@ -135,46 +172,21 @@ TEST_CASE("players should interact with the server with no errors") {
 
     CHECK(conn_count == PLAYER_COUNT);
     CHECK(gs.get_player_count() == PLAYER_COUNT);
+    CHECK(gs.get_game_count() == PLAYER_COUNT / GAME_SIZE);
     CHECK(oss.str() == std::string{""}); 
   }
 
   SUBCASE("players should be disconnected when games end") {
     // game loop set to 10ms so games timeout during the 1s pause
-    gs.set_timestep(10ms);
-
-    server_thr = std::thread{
-        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+    game_thr = std::thread{
+        bind(&minimal_game_server::update_games, &gs, 10ms)
       };
 
-    while(!gs.is_running()) {
-      std::this_thread::sleep_for(10ms);
-    }
-
-    CHECK(oss.str() == std::string{""});
-   
-    msg_process_thr = std::thread{
-        bind(&minimal_game_server::process_messages,&gs)
-      };
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
-
-    PLAYER_COUNT = 87;
-
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_id player = i;
-      std::vector<player_id> players = { player };
-      nlohmann::json json_data = { { "players", players } };
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    std::vector<player_id> player_list = { 1153, 99, 492, 35281, 74 };
+    PLAYER_COUNT = player_list.size();
+    const std::size_t GAME_SIZE = 1;
+    
+    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
 
     create_clients<player_id, minimal_game_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
@@ -193,46 +205,20 @@ TEST_CASE("players should interact with the server with no errors") {
 
     CHECK(running_count == 0);
     CHECK(gs.get_player_count() == 0);
+    CHECK(gs.get_game_count() == 0);
     CHECK(oss.str() == std::string{""});
   }
 
   SUBCASE("player messages should be echoed back") {
-    gs.set_timestep(10000ms);
-
-    server_thr = std::thread{
-        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+    game_thr = std::thread{
+        bind(&minimal_game_server::update_games, &gs, 100s)
       };
 
-    while(!gs.is_running()) {
-      std::this_thread::sleep_for(10ms);
-    }
-
-    CHECK(oss.str() == std::string{""});
-   
-    msg_process_thr = std::thread{
-        bind(&minimal_game_server::process_messages,&gs)
-      };
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
-
-    PLAYER_COUNT = 23;
-
-    // place each player into a one player game
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_id player = i;
-      std::vector<player_id> players = { player };
-      nlohmann::json json_data = { { "players", players } };
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    std::vector<player_id> player_list = { 66, 88 };
+    PLAYER_COUNT = player_list.size();
+    const std::size_t GAME_SIZE = 1;
+    
+    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
 
     create_clients<player_id, minimal_game_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
@@ -253,53 +239,21 @@ TEST_CASE("players should interact with the server with no errors") {
     CHECK(oss.str() == std::string{""});
 
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      CHECK(client_data_list[i].last_message == message);
+      CHECK(client_data_list[i].messages.back() == message);
+      CHECK(client_data_list[i].messages.size() == 1);
     }
   }
 
   SUBCASE("player messages should be echoed back to all players in the game") {
-    gs.set_timestep(10000ms);
-
-    server_thr = std::thread{
-        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+    game_thr = std::thread{
+        bind(&minimal_game_server::update_games, &gs, 100s)
       };
 
-    while(!gs.is_running()) {
-      std::this_thread::sleep_for(10ms);
-    }
-
-    CHECK(oss.str() == std::string{""});
-   
-    msg_process_thr = std::thread{
-        bind(&minimal_game_server::process_messages,&gs)
-      };
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
-
-    PLAYER_COUNT = 30;
+    std::vector<player_id> player_list = { 88213, 6, 934, 101010 };
+    PLAYER_COUNT = player_list.size();
     const std::size_t GAME_SIZE = 2;
-
-    // sign game tokens sorting players into games of GAME_SIZE players each
-    std::vector<player_id> players;
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      players.push_back(i);
-      if(players.size() == GAME_SIZE) {
-        for(player_id player : players) {
-          nlohmann::json json_data = { { "players", players } };
-
-          tokens.push_back(jwt::create<nlohmann_traits>()
-            .set_issuer(issuer)
-            .set_payload_claim("id", claim(player))
-            .set_payload_claim("data", claim(json_data))
-            .sign(jwt::algorithm::hs256{secret}));
-        }
-        players.clear();
-      }
-    }
+    
+    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
 
     create_clients<player_id, minimal_game_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
@@ -324,54 +278,27 @@ TEST_CASE("players should interact with the server with no errors") {
 
     // check all players received the echo
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      CHECK(client_data_list[i].last_message == message);
+      CHECK(client_data_list[i].messages.back() == message);
+      CHECK(client_data_list[i].messages.size() == 1);
     }
   }
 
   SUBCASE("only most recent client with a given token id should remain open") {
-    gs.set_timestep(100000ms);
-
-    server_thr = std::thread{
-        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+    game_thr = std::thread{
+        bind(&minimal_game_server::update_games, &gs, 100s)
       };
 
-    while(!gs.is_running()) {
-      std::this_thread::sleep_for(10ms);
-    }
-
-    CHECK(oss.str() == std::string{""});
-   
-    msg_process_thr = std::thread{
-        bind(&minimal_game_server::process_messages,&gs)
-      };
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
-
-    PLAYER_COUNT = 72;
-    const player_id PLAYER_ID = 148;
-
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_id player = PLAYER_ID;
-      std::vector<player_id> players = { player };
-      nlohmann::json json_data = { { "players", players } };
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    std::vector<player_id> player_list = { 3, 3, 3 };
+    PLAYER_COUNT = player_list.size();
+    const std::size_t GAME_SIZE = 1;
+    
+    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
 
     create_clients<player_id, minimal_game_client, test_client_data>(
-        clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
+        clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT, 10
       );
 
-    // long pause here because it may take 1-2ms per client to create
-    std::this_thread::sleep_for(3000ms);
+    std::this_thread::sleep_for(100ms + 10ms * PLAYER_COUNT);
 
     std::size_t conn_count = 0;
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
@@ -382,55 +309,29 @@ TEST_CASE("players should interact with the server with no errors") {
 
     CHECK(conn_count == 1);
     CHECK(gs.get_player_count() == 1);
+    CHECK(gs.get_game_count() == 1);
     CHECK(client_data_list.back().is_connected == true);
     CHECK(oss.str() == std::string{""}); 
   }
 
   SUBCASE("players should be disconnected when games end") {
-    // game loop set to 10ms so games timeout during the 1s pause
-    gs.set_timestep(10ms);
-
-    server_thr = std::thread{
-        bind(&minimal_game_server::run, &gs, SERVER_PORT, true)
+    // game loop set to 10ms so that games timeout during the 1s pause
+    game_thr = std::thread{
+        bind(&minimal_game_server::update_games, &gs, 10ms)
       };
 
-    while(!gs.is_running()) {
-      std::this_thread::sleep_for(10ms);
-    }
-
-    CHECK(oss.str() == std::string{""});
-   
-    msg_process_thr = std::thread{
-        bind(&minimal_game_server::process_messages,&gs)
-      };
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    game_thr = std::thread{bind(&minimal_game_server::update_games,&gs)};
-
-    PLAYER_COUNT = 87;
-
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      player_id player = i;
-      std::vector<player_id> players = { player };
-      nlohmann::json json_data = { { "players", players } };
-
-      tokens.push_back(jwt::create<nlohmann_traits>()
-        .set_issuer(issuer)
-        .set_payload_claim("id", claim(player))
-        .set_payload_claim("data", claim(json_data))
-        .sign(jwt::algorithm::hs256{secret}));
-    }
+    std::vector<player_id> player_list = { 8123, 23, 567, 90101, 32141, 7563 };
+    PLAYER_COUNT = player_list.size();
+    const std::size_t GAME_SIZE = 3;
+    
+    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
 
     create_clients<player_id, minimal_game_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
       );
 
     // long pause here since some timeouts need to resolve
-    std::this_thread::sleep_for(1000ms);
-
+    std::this_thread::sleep_for(1000ms + 50ms * PLAYER_COUNT);
 
     std::size_t running_count = 0;
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
@@ -441,6 +342,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     CHECK(running_count == 0);
     CHECK(gs.get_player_count() == 0);
+    CHECK(gs.get_game_count() == 0);
     CHECK(oss.str() == std::string{""});
   }
 

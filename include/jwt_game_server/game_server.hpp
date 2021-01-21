@@ -14,257 +14,160 @@ namespace jwt_game_server {
 
   // datatype implementations
   using std::set;
-  using std::shared_ptr;
-  using std::make_shared;
 
-  template<typename game_data, typename json_traits>
-  class game_instance {
-  // type definitions
-  private:
-    using player_id = typename game_data::player_id;
-
-  // main class body
-  public:
-    game_instance(const game_data& data) :
-        m_game(data)  {
-      for(player_id id : data.get_player_list()) {
-        m_player_status[id] = false;
-      }
-    }
-
-    void connect(player_id id, connection_hdl hdl) {
-      spdlog::trace("connect called for player {}", id);
-      m_player_connections[id] = hdl;
-      if(m_player_status.count(id) < 1 || !m_player_status[id]) {
-        m_player_status[id] = true;
-        m_game.connect(id);
-      }
-    }
-
-    void disconnect(player_id id) {
-      spdlog::trace("disconnect called for player {}", id);
-      m_player_status[id] = false;
-      m_game.disconnect(id);
-    }
-
-    bool is_connected(player_id id) {
-      return m_player_status[id];
-    }
-
-    connection_hdl get_connection(player_id id) {
-      return m_player_connections[id];
-    }
-
-    void process_player_update(player_id id, const std::string& text) {  
-      spdlog::trace("player_update called for player {}", id);
-      typename json_traits::json msg_json;
-
-      try {
-        json_traits::parse(msg_json, text);
-      } catch(std::exception& e) {
-        spdlog::debug("update message from {} was not valid json", id);
-        return;
-      }
-
-      m_game.player_update(id, msg_json);
-    }
-    
-    // update game every timestep
-    void game_update(long delta_time) {
-      spdlog::trace("update with timestep: {}", delta_time);
-      
-      m_game.game_update(delta_time);
-    }
-
-    bool is_done() { 
-      return m_game.is_done();
-    }
-
-    // return player ids
-    const vector<player_id>& get_player_list() {
-      return m_game.get_player_list();
-    }
-
-    struct message {
-      connection_hdl hdl;
-      std::string text;
-    };
-
-    bool get_message(message& msg) {
-      if(!m_game.has_message()) {
-        return false;
-      }
-      
-      auto game_message = m_game.get_message();
-      m_game.pop_message();
-
-      if(!is_connected(game_message.id)) {
-        spdlog::debug("message discarded for player {} who is not connected",
-          game_message.id);
-        return false;
-      }
-
-      msg.hdl = m_player_connections[game_message.id];
-      msg.text = game_message.text;
-
-      return true;
-    }
-
-  private:
-    // member variables
-    map<player_id, connection_hdl> m_player_connections;
-    map<player_id, bool> m_player_status;
-    game_data m_game;
-  };
-
-  template<typename game_data, typename jwt_clock, typename json_traits,
+  template<typename game_instance, typename jwt_clock, typename json_traits,
     typename server_config>
-  class game_server : public base_server<typename game_data::player_traits,
+  class game_server : public base_server<typename game_instance::player_traits,
       jwt_clock, json_traits, server_config> {
   // type definitions
   private:
-    using super = base_server<typename game_data::player_traits, jwt_clock,
+    using super = base_server<typename game_instance::player_traits, jwt_clock,
       json_traits, server_config>;
+
+    using combined_id = typename super::combined_id;
     using player_id = typename super::player_id;
+    using session_id = typename super::session_id;
+
     using json = typename super::json;
-    using game_ptr = shared_ptr<game_instance<game_data, json_traits> >;
+    using clock = typename super::clock;
 
   // main class body
   public:
-    game_server(const jwt::verifier<jwt_clock, json_traits>& v)
-      : super(v), m_timestep(500ms) {}
+    game_server(
+        const jwt::verifier<jwt_clock, json_traits>& v,
+        function<std::string(combined_id, const json&)> f
+      ) : super(v, f, 30s) {}
 
-    game_server(const jwt::verifier<jwt_clock, json_traits>& v,
-      std::chrono::milliseconds t)
-        : super(v), m_timestep(t) {}
+    game_server(
+        const jwt::verifier<jwt_clock, json_traits>& v,
+        function<std::string(combined_id, const json&)> f,
+        std::chrono::milliseconds t
+      ) : super(v, f, t) {}
 
     void reset() {
       super::reset();
 
       lock_guard<mutex> guard(m_game_list_lock);
-      m_player_games.clear();
       m_games.clear();
     }
 
-    void set_timestep(std::chrono::milliseconds t) {
-      if(!super::is_running()) {
-        m_timestep = t;
-      }
-    }
-
-    void update_games() {
-      auto time_start = std::chrono::high_resolution_clock::now();
-      while(super::is_running()) { 
+    void update_games(std::chrono::milliseconds timestep) {
+      auto time_start = clock::now();
+      while(super::is_running()) {
         const auto delta_time =
           std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() - time_start);
-        if(delta_time >= m_timestep) {
+            clock::now() - time_start
+          );
+
+        if(delta_time >= timestep) {
           lock_guard<mutex> game_guard(m_game_list_lock);
-          time_start = std::chrono::high_resolution_clock::now();
+          time_start = clock::now();
 
           // game updates are completely independent, so exec in parallel
           std::for_each(
               std::execution::par,
               m_games.begin(),
               m_games.end(),
-              [=](game_ptr game){
-                game->game_update(delta_time.count());
+              [=](auto& key_val_pair){
+                key_val_pair.second.game_update(delta_time.count());
               }
             );
 
           // base_server actions are locked so exec in sequence
           for(auto it = m_games.begin(); it != m_games.end();) {
-            game_ptr game = *it;
+            session_id sid = it->first;
 
-            send_messages(game);
+            send_messages(sid);
 
-            if(game->is_done()) {
-              spdlog::debug("game ended");
-              for(player_id id : game->get_player_list()) {
-                connection_hdl hdl = game->get_connection(id);
-                super::close_connection(hdl, "game ended");
+            if(it->second.is_done()) {
+              spdlog::debug("game session {} ended", sid);
+              for(player_id id : it->second.get_player_list()) {
+                combined_id cid{id, sid};
+                super::complete_connection(cid, cid, it->second.get_state());
               }
-              spdlog::trace("erasing game from list");
+              spdlog::trace("erasing game session {} from list", sid);
               it = m_games.erase(it);
             } else {
               it++;
             }
           }
         }
-        std::this_thread::sleep_for(std::min(1ms, m_timestep-delta_time));
+        std::this_thread::sleep_for(std::min(1ms, timestep-delta_time));
       }
+    }
+
+    std::size_t get_game_count() {
+      lock_guard<mutex> guard(m_game_list_lock);
+      return m_games.size();
     }
 
   private:
-    void process_message(connection_hdl hdl, player_id id,
-        const std::string& text) {
-      {
-        lock_guard<mutex> guard(m_game_list_lock);
-        m_player_games[id]->process_player_update(id, text);
-        send_messages(m_player_games[id]);
+    void process_message(const combined_id& id, const json& data)
+    {
+      super::process_message(id, data);
+
+      lock_guard<mutex> guard(m_game_list_lock);
+      auto it = m_games.find(id.session);
+      if(it != m_games.end()) {
+        it->second.player_update(id.player, data);
+        send_messages(id.session);
       }
-      super::process_message(hdl, id, text);
     }
 
-    void player_connect(connection_hdl hdl, player_id main_id,
-        const json& data) {
-      game_data d(data);
-
-      if(!d.is_valid()) {
-        spdlog::debug("connection provided incorrect login json");
-        return;
-      }
-
+    bool player_connect(const combined_id& id, const json& data) {
       lock_guard<mutex> game_guard(m_game_list_lock);
-      super::player_connect(hdl, main_id, data);
 
-      if(m_player_games.count(main_id)<1) {
-        auto gs = make_shared<
-            game_instance<game_data, json_traits>
-          >(d);
-        m_games.insert(gs);
+      if(m_games.count(id.session) < 1) {
+        game_instance game{data};
 
-        for(player_id id : d.get_player_list()) {
-          m_player_games[id] = gs;
+        if(!game.is_valid()) {
+          spdlog::error("connection provided invalid game data");
+          return false;
         }
+
+        m_games.emplace(std::make_pair(id.session, game));
       }
 
-      m_player_games[main_id]->connect(main_id, hdl);
-      send_messages(m_player_games[main_id]);
+      super::player_connect(id, data);
+
+      m_games.find(id.session)->second.connect(id.player);
+      send_messages(id.session);
+      
+      return true;
     }
 
-    player_id player_disconnect(connection_hdl hdl) {
-      player_id id = super::player_disconnect(hdl);
+    void player_disconnect(const combined_id& id) {
       {
         lock_guard<mutex> game_guard(m_game_list_lock);
-        m_player_games[id]->disconnect(id);
-        m_player_games.erase(id);
+        super::player_disconnect(id);
+        auto it = m_games.find(id.session);
+        if(it != m_games.end()) {
+          it->second.disconnect(id.player);
+        }
       }
-      return id;
     }
 
     // send all available messages for a given game (assumes m_game_lock
     // acquired)
-    void send_messages(game_ptr game) {
-      typename game_instance<game_data, json_traits>::message msg;
-      while(game->get_message(msg)) {
-        super::send_message(msg.hdl, msg.text);
+    void send_messages(session_id sid) {
+      using message = typename game_instance::message;
+      auto game_it = m_games.find(sid);
+
+      while(game_it->second.has_message()) {
+        message msg = game_it->second.get_message();
+        super::send_message({msg.id, sid}, msg.text);
+        game_it->second.pop_message();
       }
     }
 
     // member variables
-    std::chrono::milliseconds m_timestep;
-
-    // m_game_list_lock guards the members m_player_games and m_games
-    mutex m_game_list_lock;
-
     map<
-        player_id,
-        game_ptr
-      > m_player_games;
-    set<
-        game_ptr
+        session_id,
+        game_instance
       > m_games;
+
+    // m_game_list_lock guards the member m_games
+    mutex m_game_list_lock;
   };
 }
 

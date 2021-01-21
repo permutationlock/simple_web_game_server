@@ -57,21 +57,21 @@ TEST_CASE("matchmaking data game should track player list and data json") {
   using json = nlohmann::json;
   using std::vector;
 
-  using player_id = minimal_matchmaker::player_id;
+  using combined_id = minimal_matchmaker::combined_id;
   using game = minimal_matchmaker::game;
 
-  SUBCASE("empty game should have an empty list") {
-    game g{vector<player_id>{}};
+  SUBCASE("empty game should have an empty player_list") {
+    game g{vector<combined_id>{}, 0};
     CHECK(g.player_list.size() == 0);
-    CHECK(g.data == json::parse("{\"players\":[]}"));
+    CHECK(g.data.dump() == "{\"players\":[]}");
   }
 
   SUBCASE("game with two players should store correctly and parse to json") {
-    game g{vector<player_id>{75, 34}};
+    game g{vector<combined_id>{ {75, 0}, {34, 0} }, 0};
 
     CHECK(g.player_list.size() == 2);
-    CHECK(g.player_list[0] == 75);
-    CHECK(g.player_list[1] == 34);
+    CHECK(g.player_list[0].player == 75);
+    CHECK(g.player_list[1].player == 34);
     CHECK(g.data == json::parse("{\"players\":[75,34]}"));
   }
 }
@@ -81,13 +81,13 @@ TEST_CASE("matchmaking data match function should pair players") {
   using std::map;
   using std::vector;
 
-  using player_id = minimal_matchmaker::player_id;
+  using combined_id = minimal_matchmaker::combined_id;
   using player_data = minimal_matchmaker::player_data;
   using game = minimal_matchmaker::game;
 
   minimal_matchmaker matchmaker;
-  map<player_id, player_data> player_map;
-  set<player_id> altered_players;
+  map<combined_id, player_data> player_map;
+  set<combined_id> altered_players;
 
   SUBCASE("empty map should return empty list of games") {
     vector<game> games = matchmaker.match(player_map, altered_players);
@@ -95,42 +95,42 @@ TEST_CASE("matchmaking data match function should pair players") {
   }
 
   SUBCASE("map with two players should return one game") {
-    player_map[43] = player_data{};
-    player_map[102] = player_data{};
+    player_map[{ 43, 9 }] = player_data{};
+    player_map[{ 102, 3241 }] = player_data{};
     vector<game> games = matchmaker.match(player_map, altered_players);
     CHECK(games.size() == 1);
 
-    set<player_id> players;
+    set<combined_id> players;
     for(const game& g : games) {
-      for(player_id id : g.player_list) {
+      for(combined_id id : g.player_list) {
         players.insert(id);
       }
     }
     CHECK(players.size() == 2);
-    for(player_id id : players) {
+    for(combined_id id : players) {
       CHECK(player_map.count(id) > 0);
     }
   }
 
   SUBCASE("map with seven players should return three games") {
-    player_map[8] = player_data{};
-    player_map[66] = player_data{};
-    player_map[163] = player_data{};
-    player_map[421] = player_data{};
-    player_map[741] = player_data{};
-    player_map[907] = player_data{};
-    player_map[2001] = player_data{};
+    player_map[{ 8, 7 }] = player_data{};
+    player_map[{ 66, 12 }] = player_data{};
+    player_map[{ 163, 712 }] = player_data{};
+    player_map[{ 421, 2 }] = player_data{};
+    player_map[{ 741, 82 }] = player_data{};
+    player_map[{ 907, 312 }] = player_data{};
+    player_map[{ 2001, 10 }] = player_data{};
     vector<game> games = matchmaker.match(player_map, altered_players);
     CHECK(games.size() == 3);
 
-    set<player_id> players;
+    set<combined_id> players;
     for(const game& g : games) {
-      for(player_id id : g.player_list) {
+      for(combined_id id : g.player_list) {
         players.insert(id);
       }
     }
     CHECK(players.size() == 6);
-    for(player_id id : players) {
+    for(combined_id id : players) {
       CHECK(player_map.count(id) > 0);
     }
   }
@@ -140,13 +140,13 @@ TEST_CASE("matchmaking data match function should pair players") {
   }
 
   SUBCASE("we should not be able to match a player map with one player") {
-    player_map[513] = player_data{};
+    player_map[{ 513, 9231 }] = player_data{};
     CHECK(matchmaker.can_match(player_map, altered_players) == false);
   }
 
   SUBCASE("we should be able to match a player map with two players") {
-    player_map[223] = player_data{};
-    player_map[45112] = player_data{};
+    player_map[{ 223, 17 }] = player_data{};
+    player_map[{ 45112, 2}] = player_data{};
     CHECK(matchmaker.can_match(player_map, altered_players) == true);
   }
 }

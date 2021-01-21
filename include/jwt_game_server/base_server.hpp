@@ -557,7 +557,7 @@ namespace jwt_game_server {
             }
 
             m_connection_ids[hdl] = id;
-            m_id_connections.emplace(std::make_pair(id, hdl));
+            m_id_connections[id] = hdl;
             m_new_connections.erase(hdl);
           }
 

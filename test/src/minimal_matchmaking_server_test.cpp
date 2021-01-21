@@ -183,7 +183,7 @@ TEST_CASE("players should interact with the server with no errors") {
         id = game_data["pid"].get<player_id>();
       } catch(std::exception& e) {}
 
-      CHECK(id == player_list[i]);
+      CHECK(id == player_list[i].player);
 
       std::set<player_id> game_player_list;
       try {
@@ -234,15 +234,16 @@ TEST_CASE("players should interact with the server with no errors") {
           game_data["data"]["players"].get<std::vector<player_id> >();
         session_map[pid] = sid;
         pl_map[sid].insert(pid);
-      } catch(std::exception& e) {}
+      } catch(std::exception& e) {
+        spdlog::trace("AHHHHHHHHH: ", client_data_list[i].last_message);
+      }
 
       CHECK(pid == player_list[i].player);
-      CHECK(sid == player_list[i].session);
       CHECK(pid_list.size() == 2);
     }
 
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      CHECK(session_map.count(i) > 0);
+    for(const combined_id& id : player_list) {
+      CHECK(session_map.count(id.player) > 0);
     }
 
     std::size_t total_player_count = 0;

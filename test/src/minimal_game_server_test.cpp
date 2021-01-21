@@ -92,6 +92,8 @@ TEST_CASE("players should interact with the server with no errors") {
 
   using combined_id = minimal_game::player_traits::id;
   using player_id = combined_id::player_id;
+  using session_id = combined_id::session_id;
+  using claim = jwt::basic_claim<nlohmann_traits>;
 
   // setup logging sink to track errors
   std::ostringstream oss;
@@ -288,11 +290,22 @@ TEST_CASE("players should interact with the server with no errors") {
         bind(&minimal_game_server::update_games, &gs, 100s)
       };
 
-    std::vector<player_id> player_list = { 3, 3, 3 };
-    PLAYER_COUNT = player_list.size();
-    const std::size_t GAME_SIZE = 1;
-    
-    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
+    player_id pid = 84;
+    session_id sid = 192;
+    PLAYER_COUNT = 3;
+   
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      nlohmann::json json_data = {
+          { "players", std::vector<player_id>{pid} }
+        };
+
+      tokens.push_back(jwt::create<nlohmann_traits>()
+        .set_issuer(issuer)
+        .set_payload_claim("pid", claim(pid))
+        .set_payload_claim("sid", claim(sid))
+        .set_payload_claim("data", claim(json_data))
+        .sign(jwt::algorithm::hs256{secret}));
+    }
 
     create_clients<player_id, minimal_game_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT, 10

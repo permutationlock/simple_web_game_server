@@ -152,6 +152,8 @@ public:
     session_id session;
   };
 
+  minimal_matchmaker() : m_sid_count(0) {}
+
   bool can_match(const map<combined_id, player_data>& player_map,
       const set<combined_id>& altered_players) {
     return player_map.size() >= 2;

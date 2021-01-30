@@ -49,6 +49,15 @@ namespace jwt_game_server {
     typename server_config>
   class base_server {
   // type definitions
+  public: 
+    class server_error : public std::runtime_error {
+    public:
+      using super = std::runtime_error;
+      explicit server_error(const std::string& what_arg) noexcept :
+        super(what_arg) {}
+      explicit server_error(const char* what_arg) noexcept : super(what_arg) {}
+    };
+
   protected:
     using combined_id = typename player_traits::id;
     using player_id = typename combined_id::player_id;
@@ -79,27 +88,38 @@ namespace jwt_game_server {
       std::string msg;
     };
 
-    template<typename map_t>
+    struct session_data {
+      session_data(const session_id& s, const json& d) : session(s), data(d) {}
+      session_id session;
+      json data;
+    };
+
+    template<typename map_type>
     class buffered_map {
     public:
-      using key_type = typename map_t::key_type;
-      using mapped_type = typename map_t::mapped_type;
+      using key_type = typename map_type::key_type;
+      using mapped_type = typename map_type::mapped_type;
+      using value_type = typename map_type::value_type;
 
-      void insert(const pair<key_type, mapped_type>& p) {
+      void insert(const value_type& p) {
         m_map1.insert(p);
       }
 
-      void insert(pair<key_type, mapped_type>&& p) {
+      void insert(value_type&& p) {
         m_map1.insert(p);
-      }
-
-      void refresh(const key_type& key) {
-        if(contains(key)) {
-          m_map1.insert(std::make_pair(key, this->at(key)));
-        }
       }
 
       mapped_type& at(const key_type& key) {
+        if(m_map1.count(key) > 0) {
+          return m_map1.find(key)->second;
+        } else if(m_map2.count(key) > 0) {
+          return m_map2.find(key)->second;
+        } else {
+          throw std::out_of_range{"key not in buffered_map"};
+        }
+      }
+
+      const mapped_type& at(const key_type& key) const {
         if(m_map1.count(key) > 0) {
           return m_map1.find(key)->second;
         } else if(m_map2.count(key) > 0) {
@@ -129,8 +149,8 @@ namespace jwt_game_server {
         std::swap(m_map1, m_map2);
       }
 
-      map_t m_map1;
-      map_t m_map2;
+      map_type m_map1;
+      map_type m_map2;
     };
 
   // main class body
@@ -166,18 +186,13 @@ namespace jwt_game_server {
           }
         }
 
-        try {
-          m_server.set_reuse_addr(unlock_address);
-          m_server.listen(port);
-          m_server.start_accept();
+        m_server.set_reuse_addr(unlock_address);
+        m_server.listen(port);
+        m_server.start_accept();
 
-          m_server.run();
-        } catch (std::exception& e) {
-          m_is_running = false;
-          spdlog::error("error running server: {}", e.what());
-        }
+        m_server.run();
       } else {
-        spdlog::info("server is already running");
+        throw server_error("run called on running server");
       }
     }
 
@@ -192,46 +207,53 @@ namespace jwt_game_server {
       m_server.reset();
     }
 
-    // stop may be overloaded for subclasses to halt worker threads
+    // stop may be overloaded for subclasses to clear data and halt threads
     virtual void stop() {
-      m_is_running = false;
-      m_server.stop_listening();
-      {
-        lock_guard<mutex> action_guard(m_action_lock);
-        lock_guard<mutex> conn_guard(m_connection_lock);
+      if(m_is_running) {
+        m_is_running = false;
+        m_server.stop_listening();
+        {
+          lock_guard<mutex> action_guard(m_action_lock);
+          lock_guard<mutex> conn_guard(m_connection_lock);
+          lock_guard<mutex> session_guard(m_session_lock);
 
-        // collect all unresolved connection actions
-        while(!m_actions.empty()) {
-          action a = m_actions.front();
-          m_actions.pop();
-          if(a.type == SUBSCRIBE || a.type == CLOSE_CONNECTION) {
-            m_new_connections.insert(a.hdl);
+          // collect all unresolved connection actions
+          while(!m_actions.empty()) {
+            action a = m_actions.front();
+            m_actions.pop();
+            if(a.type == SUBSCRIBE || a.type == CLOSE_CONNECTION) {
+              m_new_connections.insert(a.hdl);
+            }
           }
-        }
 
-        // collect all open player connections
-        for(auto& con_pair : m_connection_ids) {
-          connection_hdl hdl = con_pair.first;
-          m_new_connections.insert(hdl);
-        }
-
-        // close all remaining open connections
-        for(connection_hdl hdl : m_new_connections) {
-          try {
-            m_server.close(
-                hdl,
-                websocketpp::close::status::normal,
-                "server shutdown"
-              );
-          } catch (std::exception& e) {
-            spdlog::debug("error closing connection: {}", e.what());
+          // collect all open player connections
+          for(auto& con_pair : m_connection_ids) {
+            m_new_connections.insert(con_pair.first);
           }
+
+          // close all remaining open connections
+          for(connection_hdl hdl : m_new_connections) {
+            try {
+              m_server.close(
+                  hdl,
+                  websocketpp::close::status::normal,
+                  "server shutdown"
+                );
+            } catch (std::exception& e) {
+              spdlog::debug("error closing connection: {}", e.what());
+            }
+          }
+
+          m_connection_ids.clear();
+          m_id_connections.clear();
+          m_new_connections.clear();
+          m_locked_sessions.clear();
+          m_session_players.clear();
         }
+        m_action_cond.notify_all();
+      } else {
+        throw server_error("stop called on stopped server");
       }
-      m_connection_ids.clear();
-      m_id_connections.clear();
-      m_new_connections.clear();
-      m_action_cond.notify_all();
     }
 
     void process_messages() {
@@ -257,31 +279,36 @@ namespace jwt_game_server {
         } else if (a.type == UNSUBSCRIBE) {
           spdlog::trace("processing UNSUBSCRIBE action");
           unique_lock<mutex> conn_lock(m_connection_lock);
-          if(m_connection_ids.count(a.hdl) < 1) {
-            spdlog::trace("player disconnected without providing id");
+
+          auto it = m_connection_ids.find(a.hdl);
+          if(it == m_connection_ids.end()) {
+            m_new_connections.erase(a.hdl);
+            spdlog::trace("client disconnected without opening session");
           } else {
             // connection provided a player id
+            combined_id id = it->second;
             conn_lock.unlock();
-            this->player_disconnect(m_connection_ids[a.hdl]);
+            this->player_disconnect(id);
           }
         } else if (a.type == IN_MESSAGE) {
           spdlog::trace("processing IN_MESSAGE action");
           unique_lock<mutex> conn_lock(m_connection_lock);
 
-          if(m_connection_ids.count(a.hdl) < 1) {
+          auto it = m_connection_ids.find(a.hdl);
+          if(it == m_connection_ids.end()) {
             spdlog::trace("recieved message from connection w/no id");
             conn_lock.unlock();
-
-            try {
-              this->open_session(a.hdl, a.msg);
-            } catch(std::exception& e) {
-              spdlog::debug("error setting up id: {}", e.what());
-            }
+            this->open_session(a.hdl, a.msg);
           } else {
-            combined_id id = m_connection_ids[a.hdl];
+            combined_id id = it->second;
             conn_lock.unlock();
 
-            spdlog::trace("processing message from player {} with session {}", id.player, id.session);
+            spdlog::trace(
+                "processing message from player {} with session {}",
+                id.player,
+                id.session
+              );
+
             json msg_json;
             try {
               json_traits::parse(msg_json, a.msg);
@@ -292,11 +319,7 @@ namespace jwt_game_server {
                 );
               return;
             }
-            try {
-              this->process_message(id, msg_json);
-            } catch(std::exception& e) {
-              spdlog::debug("error processing message: {}", e.what());
-            }
+            this->process_message(id, msg_json);
           }
         } else if(a.type == OUT_MESSAGE) {
           spdlog::trace("processing OUT_MESSAGE action");
@@ -356,20 +379,31 @@ namespace jwt_game_server {
       }
     }
 
-    void complete_connection(
-        const combined_id& id,
-        const combined_id& result_id,
+    void complete_session(
+        const session_id& sid,
+        const session_id& result_sid,
         const json& data
       )
     {
-      std::string result_token = m_get_result_str(result_id, data);
-      {
-        lock_guard<mutex> guard(m_session_lock);
-        update_session_locks();
-        close_session(id, result_token);
+      lock_guard<mutex> guard(m_session_lock);
+      update_session_locks();
+      if(!m_locked_sessions.contains(sid)) {
+        m_locked_sessions.insert(
+            std::make_pair(sid, session_data{ result_sid, data })
+          );
+
+        auto it = m_session_players.find(sid);
+        if(it != m_session_players.end()) {
+          for(player_id pid : it->second) {
+            combined_id id{ pid, sid };
+            send_message(
+                id,
+                m_get_result_str({ id.player, result_sid }, data)
+              );
+            close_connection(id, "session completed");
+          }
+        }
       }
-      send_message(id, result_token);
-      close_connection(id, "session completed");
     }
 
     // if a subclass chooses to overload one of the following three virtual
@@ -394,9 +428,21 @@ namespace jwt_game_server {
     virtual void player_disconnect(const combined_id& id) {
       connection_hdl hdl;
       if(get_connection_hdl_from_id(id, hdl)) {
-        lock_guard<mutex> connection_guard(m_connection_lock);
-        m_connection_ids.erase(hdl);
-        m_id_connections.erase(id);
+        {
+          lock_guard<mutex> connection_guard(m_connection_lock);
+          m_connection_ids.erase(hdl);
+          m_id_connections.erase(id);
+        }
+        {
+          lock_guard<mutex> session_guard(m_session_lock);
+          auto it = m_session_players.find(id.session);
+          if(it != m_session_players.end()) {
+            it->second.erase(id.player);
+            if(it->second.empty()) {
+              m_session_players.erase(it);
+            }
+          }
+        }
       }
 
       spdlog::debug("player {} with session {} disconnected",
@@ -406,8 +452,9 @@ namespace jwt_game_server {
   private:
     bool get_connection_hdl_from_id(const combined_id& id, connection_hdl& hdl) {
       lock_guard<mutex> guard(m_connection_lock);
-      if(m_id_connections.count(id) > 0) {
-        hdl = m_id_connections[id];
+      auto it = m_id_connections.find(id);
+      if(it != m_id_connections.end()) {
+        hdl = it->second;
         return true;
       }
 
@@ -427,7 +474,7 @@ namespace jwt_game_server {
       {
         lock_guard<mutex> guard(m_action_lock);
         spdlog::trace("close_connection: {}", reason);
-        m_actions.push(action(UNSUBSCRIBE,hdl));
+        m_actions.push(action(UNSUBSCRIBE, hdl));
         m_actions.push(action(CLOSE_CONNECTION, hdl, reason));
       }
       m_action_cond.notify_one();
@@ -465,7 +512,7 @@ namespace jwt_game_server {
       {
         lock_guard<mutex> guard(m_action_lock);
         spdlog::trace("connection closed");
-        m_actions.push(action(UNSUBSCRIBE,hdl));
+        m_actions.push(action(UNSUBSCRIBE, hdl));
       }
       m_action_cond.notify_one();
     }
@@ -492,10 +539,6 @@ namespace jwt_game_server {
         m_locked_sessions.clear();
         m_last_session_update_time = clock::now();
       }
-    }
-
-    void close_session(const combined_id& id, const std::string& result_token) {
-      m_locked_sessions.insert(std::make_pair(id, result_token));
     }
 
     void open_session(connection_hdl hdl, const std::string& login_token) {
@@ -529,44 +572,56 @@ namespace jwt_game_server {
       if(completed) {
         lock_guard<mutex> guard(m_session_lock);
         update_session_locks();
-        
-        if(!m_locked_sessions.contains(id)) {
+
+        if(!m_locked_sessions.contains(id.session)) {
           {
             lock_guard<mutex> guard(m_connection_lock);
 
             // immediately close duplicate connections to avoid complications
-            if(m_id_connections.count(id) > 0) {
-              spdlog::debug(
-                  "closing duplicate connection for player {} session {}",
-                  id.player,
-                  id.session
-                );
-
-              try {
-                m_server.close(
-                    m_id_connections[id],
-                    websocketpp::close::status::normal,
-                    "duplicate connection"
+            {
+              auto id_connections_it = m_id_connections.find(id);
+              if(id_connections_it != m_id_connections.end()) {
+                spdlog::debug(
+                    "closing duplicate connection for player {} session {}",
+                    id.player,
+                    id.session
                   );
-              } catch (std::exception& e) {
-                spdlog::debug("error closing duplicate connection: {}",
-                  e.what());
-              }
 
-              m_connection_ids.erase(m_id_connections[id]);
+                try {
+                  m_server.close(
+                      id_connections_it->second,
+                      websocketpp::close::status::normal,
+                      "duplicate connection"
+                    );
+                } catch (std::exception& e) {
+                  spdlog::debug("error closing duplicate connection: {}",
+                    e.what());
+                }
+
+                m_connection_ids.erase(id_connections_it->second);
+                m_id_connections.erase(id_connections_it);
+              }
             }
 
-            m_connection_ids[hdl] = id;
-            m_id_connections[id] = hdl;
+            m_connection_ids.insert(std::make_pair(hdl, id));
+            m_id_connections.insert(std::make_pair(id, hdl));
             m_new_connections.erase(hdl);
           }
 
-          if(!this->player_connect(id, login_json)) {
-            close_session(id, m_get_result_str(id, json{json::value_t::null}));
+          if(this->player_connect(id, login_json)) {
+            m_session_players[sid].insert(id.player);
+          } else {
+            // this should never happen (only occurs if invalid token issued)
             close_hdl(hdl, "invalid data claim");
           }
         } else {
-          send_to_hdl(hdl, m_locked_sessions.at(id));
+          send_to_hdl(
+              hdl,
+              m_get_result_str(
+                { id.player, m_locked_sessions.at(id.session).session },
+                m_locked_sessions.at(id.session).data
+              )
+            );
           close_hdl(hdl, "session locked");
         }
       } else {
@@ -588,6 +643,7 @@ namespace jwt_game_server {
         std::owner_less<connection_hdl>
       > m_connection_ids;
     map<combined_id, connection_hdl> m_id_connections;
+    map<session_id, std::set<player_id> > m_session_players;
 
     // m_connection_lock guards the members m_new_connections,
     // m_id_connections, and m_connection_ids
@@ -597,11 +653,10 @@ namespace jwt_game_server {
     std::chrono::milliseconds m_session_release_time;
 
     buffered_map<
-        map<combined_id, std::string>
+        map<session_id, session_data>
       > m_locked_sessions;
 
-    // m_action_lock guards the members m_locked_sessions,
-    // m_locked_sessions_buffer, and m_session_ids
+    // m_action_lock guards the members m_locked_sessions, and m_session_ids
     mutex m_session_lock;
 
     queue<action> m_actions;

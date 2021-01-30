@@ -88,9 +88,9 @@ TEST_CASE("the base client should interact with a websocket server") {
 
   std::this_thread::sleep_for(100ms);
 
-  SUBCASE("the client should be running only when it is connected") {
-    ws_client client;
+  ws_client client;
 
+  SUBCASE("the client should be running only when it is connected") {
     CHECK(server_data.conn_open == false);
     CHECK(client.is_running() == false);
     
@@ -106,7 +106,10 @@ TEST_CASE("the base client should interact with a websocket server") {
     CHECK(oss.str() == std::string{""});
     CHECK(client.has_failed() == false);
 
-    client.disconnect(); 
+    if(client.is_running()) {
+      client.disconnect(); 
+    }
+
     while(client.is_running() && !client.has_failed()) {
       std::this_thread::sleep_for(10ms);
     }
@@ -123,7 +126,6 @@ TEST_CASE("the base client should interact with a websocket server") {
 
   SUBCASE("the client should send its JWT upon opening the connection") { 
     std::string token{"JWT"};
-    ws_client client;
 
     CHECK(server_data.conn_open == false);
 
@@ -142,7 +144,10 @@ TEST_CASE("the base client should interact with a websocket server") {
     CHECK(oss.str() == std::string{""});
     CHECK(client.has_failed() == false);
 
-    client.disconnect(); 
+    if(client.is_running()) {
+      client.disconnect(); 
+    }
+
     while(client.is_running() && !client.has_failed()) {
       std::this_thread::sleep_for(10ms);
     }
@@ -154,9 +159,7 @@ TEST_CASE("the base client should interact with a websocket server") {
     client_thr.join();
   }
 
-  SUBCASE("the client should be able to send messages to the server") { 
-    ws_client client;
-
+  SUBCASE("the client should be able to send messages to the server") {
     CHECK(server_data.conn_open == false);
 
     std::thread client_thr{
@@ -177,7 +180,10 @@ TEST_CASE("the base client should interact with a websocket server") {
     CHECK(oss.str() == std::string{""});
     CHECK(client.has_failed() == false);
 
-    client.disconnect(); 
+    if(client.is_running()) {
+      client.disconnect(); 
+    }
+
     while(client.is_running() && !client.has_failed()) {
       std::this_thread::sleep_for(10ms);
     }
@@ -198,13 +204,11 @@ TEST_CASE("the base client should interact with a websocket server") {
       bool has_opened = false;
     };
 
-    ws_client client;
     test_client_data client_data;
 
     auto open_handler = std::bind(&test_client_data::on_open, &client_data);
     client.set_open_handler(open_handler);
 
-    CHECK(server_data.conn_open == false);
     CHECK(oss.str() == std::string{""});
 
     std::thread client_thr{
@@ -222,7 +226,9 @@ TEST_CASE("the base client should interact with a websocket server") {
     CHECK(oss.str() == std::string{""});
     CHECK(client.has_failed() == false);
 
-    client.disconnect(); 
+    if(client.is_running()) {
+      client.disconnect(); 
+    }
 
     while(client.is_running() && !client.has_failed()) {
       std::this_thread::sleep_for(10ms);
@@ -244,13 +250,11 @@ TEST_CASE("the base client should interact with a websocket server") {
       bool has_closed = false;
     };
 
-    ws_client client;
     test_client_data client_data;
 
     auto close_handler = std::bind(&test_client_data::on_close, &client_data);
     client.set_close_handler(close_handler);
 
-    CHECK(server_data.conn_open == false);
     CHECK(oss.str() == std::string{""});
 
     std::thread client_thr{
@@ -268,7 +272,9 @@ TEST_CASE("the base client should interact with a websocket server") {
     CHECK(oss.str() == std::string{""});
     CHECK(client.has_failed() == false);
 
-    client.disconnect(); 
+    if(client.is_running()) {
+      client.disconnect(); 
+    }
 
     while(client.is_running() && !client.has_failed()) {
       std::this_thread::sleep_for(10ms);
@@ -291,14 +297,12 @@ TEST_CASE("the base client should interact with a websocket server") {
       std::string last_message;
     };
 
-    ws_client client;
     test_client_data client_data;
 
     auto message_handler = std::bind(&test_client_data::on_message,
         &client_data, _1);
     client.set_message_handler(message_handler);
 
-    CHECK(server_data.conn_open == false);
     CHECK(oss.str() == std::string{""});
 
     std::thread client_thr{
@@ -325,7 +329,9 @@ TEST_CASE("the base client should interact with a websocket server") {
     CHECK(oss.str() == std::string{""});
     CHECK(client.has_failed() == false);
 
-    client.disconnect(); 
+    if(client.is_running()) {
+      client.disconnect(); 
+    }
 
     while(client.is_running() && !client.has_failed()) {
       std::this_thread::sleep_for(10ms);
@@ -335,6 +341,66 @@ TEST_CASE("the base client should interact with a websocket server") {
     CHECK(server_data.conn_open == false);
     CHECK(oss.str() == std::string{""});
     CHECK(client.has_failed() == false);
+    client_thr.join();
+  }
+
+  SUBCASE("the client should be able to reset and reconnect as usual") { 
+    std::string token{"my_jwt"};
+    std::thread client_thr{
+        std::bind(&ws_client::connect, &client, uri, token)
+      };
+    while(!client.is_running() && !client.has_failed()) {
+      std::this_thread::sleep_for(10ms);
+    }
+
+    std::this_thread::sleep_for(100ms);
+
+    if(client.is_running()) {
+      client.disconnect(); 
+    }
+
+    while(client.is_running() && !client.has_failed()) {
+      std::this_thread::sleep_for(10ms);
+    }
+
+    client_thr.join();
+
+    CHECK(server_data.conn_open == false);
+    CHECK(client.is_running() == false);
+
+    client.reset();
+
+    client_thr = std::thread{
+        std::bind(&ws_client::connect, &client, uri, token)
+      };
+    while(!client.is_running() && !client.has_failed()) {
+      std::this_thread::sleep_for(10ms);
+    }
+    
+    std::this_thread::sleep_for(100ms);
+
+    CHECK(server_data.conn_open == true);
+    CHECK(server_data.messages.size() == 2);
+    CHECK(server_data.last_message == token);
+    CHECK(client.is_running() == true);
+    CHECK(oss.str() == std::string{""});
+    CHECK(client.has_failed() == false);
+
+    if(client.is_running()) {
+      client.disconnect(); 
+    }
+
+    while(client.is_running() && !client.has_failed()) {
+      std::this_thread::sleep_for(10ms);
+    }
+
+    std::this_thread::sleep_for(100ms);
+
+    CHECK(server_data.conn_open == false);
+    CHECK(client.is_running() == false);
+    CHECK(client.has_failed() == false);
+
+    CHECK(oss.str() == std::string{""});
     client_thr.join();
   }
 

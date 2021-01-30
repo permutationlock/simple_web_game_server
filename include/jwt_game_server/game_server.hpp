@@ -60,7 +60,7 @@ namespace jwt_game_server {
           );
 
         if(delta_time >= timestep) {
-          lock_guard<mutex> game_guard(m_game_list_lock);
+          unique_lock<mutex> game_lock(m_game_list_lock);
           time_start = clock::now();
 
           // game updates are completely independent, so exec in parallel
@@ -81,10 +81,9 @@ namespace jwt_game_server {
 
             if(it->second.is_done()) {
               spdlog::debug("game session {} ended", sid);
-              for(player_id id : it->second.get_player_list()) {
-                combined_id cid{id, sid};
-                super::complete_connection(cid, cid, it->second.get_state());
-              }
+              game_lock.unlock();
+              super::complete_session(sid, sid, it->second.get_state());
+              game_lock.lock();
               spdlog::trace("erasing game session {} from list", sid);
               it = m_games.erase(it);
             } else {
@@ -115,31 +114,31 @@ namespace jwt_game_server {
     }
 
     bool player_connect(const combined_id& id, const json& data) {
-      lock_guard<mutex> game_guard(m_game_list_lock);
+      game_instance game{data};
 
-      if(m_games.count(id.session) < 1) {
-        game_instance game{data};
-
-        if(!game.is_valid()) {
-          spdlog::error("connection provided invalid game data");
-          return false;
-        }
-
-        m_games.emplace(std::make_pair(id.session, game));
+      if(!game.is_valid()) {
+        spdlog::error("connection provided invalid game data");
+        return false;
       }
 
       super::player_connect(id, data);
 
-      m_games.find(id.session)->second.connect(id.player);
+      lock_guard<mutex> game_guard(m_game_list_lock);
+      auto it = m_games.find(id.session);
+      if(it == m_games.end()) {
+        it = m_games.emplace(std::make_pair(id.session, game)).first;
+      }
+
+      it->second.connect(id.player);
       send_messages(id.session);
       
       return true;
     }
 
     void player_disconnect(const combined_id& id) {
+      super::player_disconnect(id);
       {
         lock_guard<mutex> game_guard(m_game_list_lock);
-        super::player_disconnect(id);
         auto it = m_games.find(id.session);
         if(it != m_games.end()) {
           it->second.disconnect(id.player);

@@ -130,16 +130,42 @@ private:
 };
 
 struct tic_tac_toe_player_traits {
-  typedef unsigned long player_id;
-  static player_id parse_id(const json& id_json) {
-    return id_json.get<player_id>();
+  struct id {
+    using player_id = unsigned long;
+    using session_id = unsigned long;
+
+    id() {}
+    id(player_id p, session_id s) : player(p), session(s) {}
+
+    bool operator<(const id& other) const {
+      if(player < other.player) {
+        return true;
+      } else if(other.player < player) {
+        return false;
+      } else if(session < other.session) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+  
+    player_id player;
+    session_id session;
+  };
+
+  static id::player_id parse_player_id(const json& id_json) {
+    return id_json.get<id::player_id>();
+  }
+
+  static id::session_id parse_session_id(const json& id_json) {
+    return id_json.get<d::session_id>();
   }
 };
 
 class tic_tac_toe_game {
 public:
-  typedef tic_tac_toe_player_traits player_traits;
-  typedef player_traits::player_id player_id;
+  using player_traits = tic_tac_toe_player_traits;
+  using player_id = player_traits::id::player_id;
 
   struct message {
     message(player_id i, const std::string& t) : id(i), text(t) {}
@@ -299,10 +325,6 @@ public:
     return m_valid;
   }
 
-  const vector<player_id>& get_player_list() const {
-    return m_player_list;
-  }
-
   bool has_message() const {
     return !m_message_queue.empty();
   }
@@ -371,47 +393,76 @@ private:
 struct tic_tac_toe_matchmaking_data {
 public: 
   using player_traits = tic_tac_toe_player_traits;
-  using player_id = tic_tac_toe_player_traits::player_id;
+  using combined_id = player_traits::id;
+  using player_id = combined_id::player_id;
+  using session_id = combined_id::session_id;
 
-  struct player_data {
-    player_data() {}
-    player_data(const json& data) {}
+  struct session_data {
+    session_data(const json& data) {}
+
+    bool is_valid() {
+      return true;
+    }
   };
 
   struct game {
-    game(const vector<player_id>& pl) : player_list(pl) { 
-      data["players"] = player_list;
-      data["time"] = 10000;
+    game(const vector<session_id>& sl, session_id sid) : session_list(sl),
+      session(sid)
+    {
+      data["matched"] = true;
     }
 
-    vector<player_id> player_list;
+    vector<session_id> session_list;
+    session_id session;
     json data;
   };
 
-  bool can_match(const map<player_id, player_data>& player_map,
-      const set<player_id>& altered_players) {
-    return player_map.size() >= 2;
+  minimal_matchmaker() : m_sid_count(0) {}
+
+  bool can_match(
+      const map<session_id, map<player_id, player_data> >& session_map,
+      const set<session_id>& altered_sessions
+    )
+  {
+    return session_map.size() >= 2;
   }
 
-  vector<game> match(const map<player_id, player_data>& player_map,
-      const set<player_id>& altered_players, long delta_time) {
-    vector<player_id> pl;
-    vector<game> game_list;
+  void match(
+      vector<game>& game_list,
+      const map<session_id, session_data >& session_data_map,
+      const map<session_id, vector<player_id> >& session_player_map,
+      const set<session_id>& altered_sessions
+    )
+  {
+    vector<session_id> sl;
+    for(auto& spair : session_map) {
+      session_id sid = spair.first;
 
-    for(auto const& player : player_map) {
-      pl.push_back(player.first);
-      if(pl.size() > 1) {
-        game_list.push_back(game{pl});
-        pl.clear();
+      if(spair.second.size() > 1) {
+        game_list.emplace_back(vector<session_id>{sid}, m_sid_count++);
+      } else { 
+        sl.push_back(sid);
+      }
+
+      if(sl.size() > 0) {
+        game_list.emplace_back(sl, m_sid_count++);
+        sl.clear();
       }
     }
-
-    return game_list;
+  }
+ 
+  json get_cancel_data(
+      session_id sid,
+      const map<player_id, player_data>& data
+    )
+  {
+    json temp;
+    temp["matched"] = false;
+    return temp; 
   }
 
-  json get_cancel_data(player_id id, const player_data& data) {
-    return game{std::vector<player_id>{}}.data;
-  }
+private:
+  session_id m_sid_count;
 };
 
 #endif // TIC_TAC_TOE_HPP

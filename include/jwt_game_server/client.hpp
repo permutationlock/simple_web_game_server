@@ -10,6 +10,8 @@
 #include <mutex>
 #include <functional>
 
+#include <exception>
+
 namespace jwt_game_server {
   // websocketpp types
   using websocketpp::connection_hdl;
@@ -32,12 +34,21 @@ namespace jwt_game_server {
     using ws_client = websocketpp::client<client_config>;
     using message_ptr = typename ws_client::message_ptr;
 
+  public:
+    class client_error : public std::runtime_error {
+    public:
+      using super = std::runtime_error;
+      explicit client_error(const std::string& what_arg) noexcept :
+        super(what_arg) {}
+      explicit client_error(const char* what_arg) noexcept : super(what_arg) {}
+    };
+
   // main class body
   public:
-    client()
-        : m_is_running(false), m_has_failed(false), m_handle_open([](){}),
-          m_handle_close([](){}),
-          m_handle_message([](const std::string& s){}) {
+    client() : m_is_running{false}, m_has_failed{false},
+      m_handle_open{[](){}}, m_handle_close{[](){}},
+      m_handle_message{[](const std::string& s){}}
+    {
       m_client.init_asio();
 
       m_client.set_open_handler(bind(&client::on_open, this,
@@ -50,11 +61,32 @@ namespace jwt_game_server {
         );
     }
 
-    client(const client& c) : client() {}
+    client(
+        std::function<void()> of,
+        std::function<void()> cf,
+        std::function<void(const std::string&)> mf
+      ) : m_is_running{false}, m_has_failed{false},
+          m_handle_open{of}, m_handle_close{cf},
+          m_handle_message{mf}
+    {
+      m_client.init_asio();
+
+      m_client.set_open_handler(bind(&client::on_open, this,
+        jwt_game_server::_1));
+      m_client.set_close_handler(bind(&client::on_close, this,
+        jwt_game_server::_1));
+      m_client.set_message_handler(
+          bind(&client::on_message, this, jwt_game_server::_1,
+            jwt_game_server::_2)
+        );
+    }
+
+    client(const client& c) :
+      client{c.m_handle_open, c.m_handle_close, c.m_handle_message} {}
 
     void connect(const std::string& uri, const std::string& jwt) {
       if(m_is_running) {
-        spdlog::debug("cannot connect: client already connected");
+        throw client_error("connect called on running client");
         return;
       }
 
@@ -97,7 +129,16 @@ namespace jwt_game_server {
         } catch(std::exception& e) {
           spdlog::error("error closing client connection: {}", e.what());
         }
+      } else {
+        throw client_error("disconnect called on stopped client");
       }
+    }
+
+    void reset() {
+      if(m_is_running) {
+        this->disconnect();
+      }
+      m_client.reset();
     }
 
     void send(const std::string& msg) {
@@ -113,8 +154,10 @@ namespace jwt_game_server {
             e.what());
         }
       } else {
-          spdlog::error("client is not running, cannot send message \"{}\"",
-            msg);
+        throw client_error{
+            std::string{"send called on stopped client with message: "} + 
+            msg
+          };
       }
     }
 
@@ -122,7 +165,7 @@ namespace jwt_game_server {
       if(!m_is_running) {
         m_handle_open = f;
       } else {
-        spdlog::error("client cannot bind open handler while running");
+        throw client_error{"set_open_handler called on running client"};
       }
     }
 
@@ -130,7 +173,7 @@ namespace jwt_game_server {
       if(!m_is_running) {
         m_handle_close = f;
       } else { 
-        spdlog::error("client cannot bind close handler while running");
+        throw client_error{"set_close_handler called on running client"};
       }
     }
 
@@ -138,7 +181,7 @@ namespace jwt_game_server {
       if(!m_is_running) {
         m_handle_message = f;
       } else {
-        spdlog::error("client cannot bind message handler while running");
+        throw client_error{"set_message_handler called on running client"};
       }
     }
 

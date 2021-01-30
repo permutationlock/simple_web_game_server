@@ -4,6 +4,7 @@
 #define MINIMAL_GAME_HPP
 
 #include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
 #include <vector>
@@ -61,15 +62,11 @@ public:
     std::string text;
   };
 
-  minimal_game(const json& msg): m_valid(true) {
-    try {
-      m_player_list = msg.at("players").get<vector<player_id> >();
-    } catch(json::exception& e) {
-      m_valid=false;
-    }
-  }
+  minimal_game(const json& msg) {}
   
-  void connect(player_id id) {}
+  void connect(player_id id) {
+    m_player_list.insert(id);
+  }
 
   void disconnect(player_id id) {}
 
@@ -86,7 +83,7 @@ public:
   }
   
   bool is_valid() const {
-    return m_valid;
+    return true;
   }
 
   json get_state() const {
@@ -94,10 +91,6 @@ public:
     data["done"] = true;
     data["players"] = m_player_list;
     return data;
-  }
-
-  const vector<player_id>& get_player_list() const {
-    return m_player_list;
   }
 
   bool has_message() const {
@@ -113,23 +106,17 @@ public:
   }
 
 private:
-  vector<player_id> m_player_list;
-
+  set<player_id> m_player_list;
   queue<message> m_message_queue;
-
-  bool m_valid;
 };
 
 class minimal_matchmaker {
 public:
   using player_traits = minimal_player_traits;
-  using combined_id = player_traits::id;
-  using player_id = combined_id::player_id;
-  using session_id = combined_id::session_id;
+  using session_id = player_traits::id::session_id;
 
-  struct player_data {
-    player_data() {}
-    player_data(const json& data) {}
+  struct session_data {
+    session_data(const json& data) {}
 
     bool is_valid() {
       return true;
@@ -137,46 +124,51 @@ public:
   };
 
   struct game {
-    game(const vector<combined_id>& pl, session_id sid) : player_list(pl),
+    game(const vector<session_id>& sl, session_id sid) : session_list(sl),
       session(sid)
     {
-      std::vector<player_id> pid_list;
-      for(const combined_id& id : player_list) {
-        pid_list.push_back(id.player);
-      }
-      data["players"] = pid_list;
+      data["matched"] = true;
     }
 
-    vector<combined_id> player_list;
-    json data;
+    vector<session_id> session_list;
     session_id session;
+    json data;
   };
 
   minimal_matchmaker() : m_sid_count(0) {}
 
-  bool can_match(const map<combined_id, player_data>& player_map,
-      const set<combined_id>& altered_players) {
-    return player_map.size() >= 2;
+  bool can_match(
+      const map<session_id, session_data>& session_map,
+      const set<session_id>& altered_sessions
+    )
+  {
+    return session_map.size() >= 2;
   }
 
-  vector<game> match(const map<combined_id, player_data>& player_map,
-      const set<combined_id>& altered_players) {
-    vector<combined_id> pl;
-    vector<game> game_list;
-
-    for(auto& player : player_map) {
-      pl.push_back(player.first);
-      if(pl.size() > 1) {
-        game_list.push_back(game{pl, m_sid_count++});
-        pl.clear();
+  void match(
+      vector<game>& game_list,
+      const map<session_id, session_data>& session_map,
+      const set<session_id>& altered_sessions
+    )
+  {
+    vector<session_id> sl;
+    for(auto& spair : session_map) {
+      sl.push_back(spair.first);
+      if(sl.size() > 1) {
+        game_list.push_back(game{sl, m_sid_count++});
+        sl.clear();
       }
     }
-
-    return game_list;
   }
  
-  json get_cancel_data(combined_id id, const player_data& data) {
-    return game{std::vector<combined_id>{}, id.session}.data;
+  json get_cancel_data(
+      session_id sid,
+      const session_data& data
+    )
+  {
+    json temp;
+    temp["matched"] = false;
+    return temp; 
   }
 
 private:

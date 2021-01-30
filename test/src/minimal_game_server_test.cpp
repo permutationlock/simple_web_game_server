@@ -44,13 +44,11 @@ void create_game_tokens(
     players.push_back(pid);
     if(players.size() == GAME_SIZE) {
       for(player_id pid : players) {
-        nlohmann::json json_data = { { "players", players } };
-
         tokens.push_back(jwt::create<nlohmann_traits>()
           .set_issuer(issuer)
           .set_payload_claim("pid", claim(pid))
           .set_payload_claim("sid", claim(sid))
-          .set_payload_claim("data", claim(json_data))
+          .set_payload_claim("data", claim(json::value_t::object))
           .sign(jwt::algorithm::hs256{secret}));
       }
       players.clear();
@@ -117,7 +115,6 @@ TEST_CASE("players should interact with the server with no errors") {
       json temp;
       temp["pid"] = id.player;
       temp["sid"] = id.session;
-      temp["data"] = data;
       return temp.dump();
     };
 
@@ -163,7 +160,7 @@ TEST_CASE("players should interact with the server with no errors") {
       );
 
     // long pause here because it may take 1-2ms per client to create
-    std::this_thread::sleep_for(3000ms);
+    std::this_thread::sleep_for(1000ms);
 
     std::size_t conn_count = 0;
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
@@ -196,7 +193,6 @@ TEST_CASE("players should interact with the server with no errors") {
 
     // long pause here since some timeouts need to resolve
     std::this_thread::sleep_for(1000ms);
-
 
     std::size_t running_count = 0;
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
@@ -356,13 +352,92 @@ TEST_CASE("players should interact with the server with no errors") {
     CHECK(running_count == 0);
     CHECK(gs.get_player_count() == 0);
     CHECK(gs.get_game_count() == 0);
+
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      std::string message = sign_result(
+          { player_list[i], i/GAME_SIZE }, json{}
+        );
+      std::string result{""};
+      if(client_data_list[i].messages.size() > 0) {
+        result = client_data_list[i].messages.back();
+      }
+
+      CHECK(result == message);
+      CHECK(client_data_list[i].messages.size() == 1);
+    }
+
     CHECK(oss.str() == std::string{""});
+  }
+
+  SUBCASE("once game sessions end connecting players are sent the end token") {
+    game_thr = std::thread{
+        bind(&minimal_game_server::update_games, &gs, 100ms)
+      };
+
+    std::vector<player_id> player_list = { 833, 2319, 3147, 74 };
+    PLAYER_COUNT = player_list.size();
+    const std::size_t GAME_SIZE = 2;
+    
+    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
+
+    create_clients<player_id, minimal_game_client, test_client_data>(
+        clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
+      );
+
+    // long pause here because it may take 1-2ms per client to create
+    std::this_thread::sleep_for(1000ms);
+
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      try {
+        clients[i].disconnect();
+      } catch(minimal_game_client::client_error& e) {}
+    }
+
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      client_threads[i].join();
+    }
+
+    clients.clear();
+    client_data_list.clear();
+    client_threads.clear();
+
+    create_clients<player_id, minimal_game_client, test_client_data>(
+        clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
+      );
+
+    std::this_thread::sleep_for(1000ms);
+
+    std::size_t conn_count = 0;
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      if(client_data_list[i].is_connected) {
+        conn_count++;
+      }
+    }
+
+    CHECK(conn_count == 0);
+    CHECK(gs.get_player_count() == 0);
+    CHECK(gs.get_game_count() == 0);
+
+    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
+      std::string message = sign_result({ player_list[i], i/2 }, json{});
+      std::string result{""};
+      if(client_data_list[i].messages.size() > 0) {
+        result = client_data_list[i].messages.back();
+      }
+
+      CHECK(result == message);
+      CHECK(client_data_list[i].messages.size() == 1);
+    }
+
+    CHECK(oss.str() == std::string{""}); 
   }
 
   // end of test cleanup
 
   for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-    clients[i].disconnect();
+    try {
+      clients[i].disconnect();
+    } catch(minimal_game_client::client_error& e) {}
   }
 
   for(std::size_t i = 0; i < PLAYER_COUNT; i++) {

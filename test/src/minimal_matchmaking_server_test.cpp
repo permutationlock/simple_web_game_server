@@ -38,7 +38,7 @@ void create_matchmaker_tokens(
         .set_issuer(issuer)
         .set_payload_claim("pid", claim(id.player))
         .set_payload_claim("sid", claim(id.session))
-        .set_payload_claim("data", claim(json{json::value_t::object}))
+        .set_payload_claim("data", claim(json::value_t::object))
         .sign(jwt::algorithm::hs256{secret})
       );
   }
@@ -172,34 +172,37 @@ TEST_CASE("players should interact with the server with no errors") {
 
     std::this_thread::sleep_for(1000ms);
 
+    std::map<player_id, session_id> session_map;
+    std::map<session_id, std::set<player_id> > pl_map;
+
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      json game_data;
+      player_id pid;
+      session_id sid;
       try {
+        json game_data;
         nlohmann_traits::parse(game_data, client_data_list[i].last_message);
-      } catch(std::exception& e) {}
-
-      player_id id;
-      try {
-        id = game_data["pid"].get<player_id>();
-      } catch(std::exception& e) {}
-
-      CHECK(id == player_list[i].player);
-
-      std::set<player_id> game_player_list;
-      try {
-        std::vector<player_id> pl{
-            game_data["data"]["players"].get<std::vector<player_id> >()
-          };
-
-        for(player_id id : pl) {
-          game_player_list.insert(id);
-        }
-      } catch(std::exception& e) {}
-
-      for(const combined_id& id : player_list) {
-        CHECK(game_player_list.count(id.player) > 0);
+        pid = game_data["pid"].get<player_id>();
+        sid = game_data["sid"].get<session_id>();
+        session_map[pid] = sid;
+        pl_map[sid].insert(pid);
+      } catch(std::exception& e) {
+        spdlog::trace("AHHHHHHHHH: ", client_data_list[i].last_message);
       }
+
+      CHECK(pid == player_list[i].player);
     }
+
+    for(const combined_id& id : player_list) {
+      CHECK(session_map.count(id.player) > 0);
+    }
+
+    std::size_t total_player_count = 0;
+    for(auto& sid_pl_pair : pl_map) {
+      CHECK(sid_pl_pair.second.size() == 2);
+      total_player_count += sid_pl_pair.second.size();
+    }
+
+    CHECK(total_player_count == PLAYER_COUNT);
 
     CHECK(oss.str() == std::string{""});
   }
@@ -224,22 +227,17 @@ TEST_CASE("players should interact with the server with no errors") {
     for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
       player_id pid;
       session_id sid;
-      std::vector<player_id> pid_list;
       try {
         json game_data;
         nlohmann_traits::parse(game_data, client_data_list[i].last_message);
         pid = game_data["pid"].get<player_id>();
         sid = game_data["sid"].get<session_id>();
-        pid_list =
-          game_data["data"]["players"].get<std::vector<player_id> >();
         session_map[pid] = sid;
         pl_map[sid].insert(pid);
       } catch(std::exception& e) {
-        spdlog::trace("AHHHHHHHHH: ", client_data_list[i].last_message);
       }
 
       CHECK(pid == player_list[i].player);
-      CHECK(pid_list.size() == 2);
     }
 
     for(const combined_id& id : player_list) {
@@ -295,7 +293,9 @@ TEST_CASE("players should interact with the server with no errors") {
   // end of test cleanup
 
   for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-    clients[i].disconnect();
+    try {
+      clients[i].disconnect();
+    } catch(minimal_client::client_error& e) {}
   }
 
   for(std::size_t i = 0; i < PLAYER_COUNT; i++) {

@@ -18,9 +18,12 @@ using ttt_server = jwt_game_server::game_server<
     asio_no_logs
   >;
 
+using claim = jwt::basic_claim<nlohmann_traits>;
+using combined_id = tic_tac_toe_player_traits::id;
+
 int main() {
   // log level
-  spdlog::set_level(spdlog::level::trace);
+  spdlog::set_level(spdlog::level::debug);
 
   // create a jwt verifier
   jwt::verifier<jwt::default_clock, nlohmann_traits> 
@@ -28,8 +31,18 @@ int main() {
   verifier.allow_algorithm(jwt::algorithm::hs256("secret"))
     .with_issuer("tic_tac_toe_matchmaker");
 
+  // create a function to sign game result tokens
+  auto sign_game = [](const combined_id& id, const json& data){ 
+      return jwt::create<nlohmann_traits>()
+        .set_issuer("tic_tac_toe_game_server")
+        .set_payload_claim("pid", claim(id.player))
+        .set_payload_claim("sid", claim(id.session))
+        .set_payload_claim("data", claim(data))
+        .sign(jwt::algorithm::hs256{"secret"});
+    };
+
   // create our main server to manage player connection and matchmaking
-  ttt_server gs(verifier, 500ms);
+  ttt_server gs(verifier, sign_game, 60s);
 
   // any of the processes below can be managed by multiple threads for higher
   // performance on multi-threaded machines
@@ -44,7 +57,7 @@ int main() {
   std::thread msg_process_thr{bind(&ttt_server::process_messages,&gs)};
 
   // bind a thread to update all running games at regular time steps
-  std::thread game_thr{bind(&ttt_server::update_games,&gs)};
+  std::thread game_thr{bind(&ttt_server::update_games, &gs, 16ms)};
 
   gs_server_thr.join();
   msg_process_thr.join();

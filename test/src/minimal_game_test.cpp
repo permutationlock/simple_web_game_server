@@ -3,8 +3,8 @@
 #include <model_games/minimal_game.hpp>
 
 #include <vector>
-#include <map>
-#include <set>
+#include <unordered_map>
+#include <unordered_set>
 
 TEST_CASE("minimal games should be done and not have messages") {
   using json = nlohmann::json;
@@ -40,7 +40,6 @@ TEST_CASE("matchmaker games should track player list and data json") {
 
 TEST_CASE("matchmaker should generate simple cancel json") {
   using json = nlohmann::json;
-  using std::map;
 
   using session_data = minimal_matchmaker::session_data;
 
@@ -77,17 +76,18 @@ TEST_CASE("matchmaker game should track session list and data json") {
 }
 
 TEST_CASE("matchmaking data match function should pair players") {
-  using std::set;
-  using std::map;
+  using std::unordered_set;
+  using std::unordered_map;
   using std::vector;
 
   using session_id = minimal_player_traits::id::session_id;
+  using id_hash = minimal_player_traits::id::hash;
   using session_data = minimal_matchmaker::session_data;
   using game = minimal_matchmaker::game;
 
   minimal_matchmaker matchmaker;
-  map<session_id, session_data> session_map;
-  set<session_id> altered_sessions;
+  unordered_map<session_id, session_data, id_hash> session_map;
+  unordered_set<session_id, id_hash> altered_sessions;
 
   SUBCASE("empty map should return empty list of games") {
     vector<game> games;
@@ -104,7 +104,7 @@ TEST_CASE("matchmaking data match function should pair players") {
 
     CHECK(games.size() == 1);
 
-    set<session_id> sessions;
+    unordered_set<session_id, id_hash> sessions;
     for(const game& g : games) {
       for(session_id sid : g.session_list) {
         sessions.insert(sid);
@@ -136,7 +136,7 @@ TEST_CASE("matchmaking data match function should pair players") {
 
     CHECK(games.size() == 3);
 
-    set<session_id> sessions;
+    unordered_set<session_id, id_hash> sessions;
     for(const game& g : games) {
       for(session_id sid : g.session_list) {
         sessions.insert(sid);

@@ -7,12 +7,14 @@
 using json = nlohmann::json;
 
 #include <vector>
-#include <map>
+#include <unordered_set>
+#include <unordered_map>
 #include <queue>
+#include <functional>
 
 using std::vector;
-using std::set;
-using std::map;
+using std::unordered_map;
+using std::unordered_set;
 using std::queue;
 
 const int X_VAL = 1;
@@ -134,21 +136,24 @@ struct tic_tac_toe_player_traits {
     using player_id = unsigned long;
     using session_id = unsigned long;
 
+    struct hash {
+      std::size_t operator()(const id& id_data) const {
+        return std::hash<player_id>{}(id_data.player)
+          ^ std::hash<session_id>{}(id_data.session);
+      }
+
+      std::size_t operator()(unsigned long int_id) const {
+        return std::hash<unsigned long>{}(int_id);
+      }
+    };
+
     id() {}
     id(player_id p, session_id s) : player(p), session(s) {}
 
-    bool operator<(const id& other) const {
-      if(player < other.player) {
-        return true;
-      } else if(other.player < player) {
-        return false;
-      } else if(session < other.session) {
-        return true;
-      } else {
-        return false;
-      }
+    bool operator==(const id& other_id) const {
+      return (player == other_id.player) && (session == other_id.session);
     }
-  
+
     player_id player;
     session_id session;
   };
@@ -158,7 +163,7 @@ struct tic_tac_toe_player_traits {
   }
 
   static id::session_id parse_session_id(const json& id_json) {
-    return id_json.get<d::session_id>();
+    return id_json.get<id::session_id>();
   }
 };
 
@@ -175,41 +180,45 @@ public:
   };
 
   tic_tac_toe_game(const json& msg) : m_valid(true), m_started(false),
-    m_game_over(false), m_xmove(true), m_state(0)
+    m_game_over(false), m_xmove(true), m_state(0), m_xtime(10000),
+    m_otime(10000)
   {
-    spdlog::trace(msg.dump());
-
+    bool is_matched = false;
     try {
-      m_player_list = msg.at("players").get<vector<player_id> >();
-      m_xtime = msg.at("time").get<unsigned int>();
-      m_otime = m_xtime;
+      is_matched = msg.at("matched").get<bool>();
     } catch(json::exception& e) {
-      m_valid=false;
+      m_valid = false;
     }
 
-    for(player_id id : m_player_list) {
-      m_data_map[id] = player_data{};
+    if(!is_matched) {
+      m_valid = false;
     }
   }
   
   void connect(player_id id) {
+    spdlog::trace("tic tac toe connect player {}", id);
     if(m_data_map.count(id) < 1) {
-      spdlog::debug("recieved connection from player {} not in list", id);
-    } else {
-      m_data_map[id].is_connected = true;
+      m_data_map[id] = player_data{};
+      m_player_list.push_back(id);
+    }
 
-      send(id, get_game_state(id));
+    m_data_map[id].is_connected = true;
 
-      if(!m_data_map[id].has_connected) {
-        m_data_map[id].has_connected = true;
-        
+    send(id, get_game_state(id));
+
+    if(!m_data_map[id].has_connected) {
+      m_data_map[id].has_connected = true;
+      
+      if(m_player_list.size() > 1) {
         bool ready = true;
+
         for(player_id id : m_player_list) {
           if(!m_data_map[id].has_connected) {
             ready = false;
             break;
           }
         }
+
         if(ready) {
           start();
         }
@@ -300,9 +309,7 @@ public:
     }
   }
 
-  json get_state(player_id id) const {
-    bool isx = (id == m_player_list.front());
-
+  json get_state() const {
     json game_json;
     game_json["type"] = "game";
     game_json["board"] = m_board.get_board();
@@ -312,7 +319,6 @@ public:
     game_json["times"] = std::vector<long>{ m_xtime, m_otime };
     game_json["state"] = m_board.get_state() + m_state;
     game_json["done"] = is_done();
-    game_json["your_turn"] = isx ? m_xmove : !m_xmove;
  
     return game_json;
   }
@@ -349,7 +355,7 @@ private:
   json get_game_state(player_id id) const {
     bool isx = (id == m_player_list.front());
 
-    json game_json{get_state(id)};
+    json game_json = get_state();
     game_json["your_turn"] = isx ? m_xmove : !m_xmove;
  
     return game_json;
@@ -373,7 +379,7 @@ private:
   };
 
   vector<player_id> m_player_list;
-  map<player_id, player_data> m_data_map;
+  unordered_map<player_id, player_data> m_data_map;
 
   queue<message> m_message_queue;
 
@@ -390,12 +396,11 @@ private:
   tic_tac_toe_board m_board;
 };
 
-struct tic_tac_toe_matchmaking_data {
-public: 
+struct tic_tac_toe_matchmaker {
+public:
   using player_traits = tic_tac_toe_player_traits;
-  using combined_id = player_traits::id;
-  using player_id = combined_id::player_id;
-  using session_id = combined_id::session_id;
+  using session_id = player_traits::id::session_id;
+  using hash_id = player_traits::id::hash;
 
   struct session_data {
     session_data(const json& data) {}
@@ -417,43 +422,35 @@ public:
     json data;
   };
 
-  minimal_matchmaker() : m_sid_count(0) {}
+  tic_tac_toe_matchmaker() : m_sid_count(0) {}
 
   bool can_match(
-      const map<session_id, map<player_id, player_data> >& session_map,
-      const set<session_id>& altered_sessions
-    )
+      const unordered_map<session_id, session_data, hash_id>& session_map,
+      const unordered_set<session_id, hash_id>& altered_sessions
+    ) const
   {
     return session_map.size() >= 2;
   }
 
   void match(
       vector<game>& game_list,
-      const map<session_id, session_data >& session_data_map,
-      const map<session_id, vector<player_id> >& session_player_map,
-      const set<session_id>& altered_sessions
+      const unordered_map<session_id, session_data, hash_id>& session_map,
+      const unordered_set<session_id, hash_id>& altered_sessions
     )
   {
     vector<session_id> sl;
     for(auto& spair : session_map) {
-      session_id sid = spair.first;
-
-      if(spair.second.size() > 1) {
-        game_list.emplace_back(vector<session_id>{sid}, m_sid_count++);
-      } else { 
-        sl.push_back(sid);
-      }
-
-      if(sl.size() > 0) {
-        game_list.emplace_back(sl, m_sid_count++);
+      sl.push_back(spair.first);
+      if(sl.size() > 1) {
+        game_list.push_back(game{sl, m_sid_count++});
         sl.clear();
       }
     }
   }
  
   json get_cancel_data(
-      session_id sid,
-      const map<player_id, player_data>& data
+      const session_id& sid,
+      const session_data& data
     )
   {
     json temp;

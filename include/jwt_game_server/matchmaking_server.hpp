@@ -3,7 +3,7 @@
 
 #include "base_server.hpp"
 
-#include <set>
+#include <unordered_set>
 #include <chrono>
 #include <functional>
 
@@ -12,7 +12,7 @@ namespace jwt_game_server {
   using namespace std::chrono_literals;
 
   // datatype implementations
-  using std::set;
+  using std::unordered_set;
 
   template<typename matchmaker, typename jwt_clock, typename json_traits,
     typename server_config>
@@ -35,6 +35,7 @@ namespace jwt_game_server {
     using combined_id = typename super::combined_id;
     using player_id = typename super::player_id;
     using session_id = typename super::session_id;
+    using id_hash = typename super::id_hash;
  
     using json = typename super::json;
     using session_data = typename matchmaker::session_data;
@@ -45,7 +46,7 @@ namespace jwt_game_server {
     matchmaking_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f
-      ) : super{v, f, 30s} {}
+      ) : super{v, f, 3600s} {}
 
     matchmaking_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
@@ -194,8 +195,8 @@ namespace jwt_game_server {
     mutex m_match_lock;
     condition_variable m_match_cond;
 
-    map<session_id, session_data> m_session_data;
-    set<session_id> m_altered_sessions;
+    unordered_map<session_id, session_data, id_hash> m_session_data;
+    unordered_set<session_id, id_hash> m_altered_sessions;
   };
 }
 

@@ -12,6 +12,7 @@
 #include <queue>
 #include <set>
 #include <map>
+#include <unordered_map>
 
 #include <utility>
 
@@ -30,6 +31,7 @@ namespace jwt_game_server {
   using std::pair;
   using std::set;
   using std::map;
+  using std::unordered_map;
   using std::queue;
 
   // functional types
@@ -62,6 +64,8 @@ namespace jwt_game_server {
     using combined_id = typename player_traits::id;
     using player_id = typename combined_id::player_id;
     using session_id = typename combined_id::session_id;
+    using id_hash = typename combined_id::hash;
+
     using json = typename json_traits::json;
     using clock = std::chrono::high_resolution_clock;
     using time_point = std::chrono::time_point<clock>;
@@ -379,6 +383,14 @@ namespace jwt_game_server {
       }
     }
 
+    // child classes that call this function should not hold any mutex locks
+    // that must be acquired for player_connect to complete.
+    // This is due to the fact that m_session_lock is acquired by the
+    // open_session function and stays locked during a call to player_connect.
+    // Thus it may result in a deadlock if open session acquires
+    // m_session_lock, then a child function acquires a local lock, then
+    // player_connect waits on the local lock, then complete session waits on
+    // m_session_lock.
     void complete_session(
         const session_id& sid,
         const session_id& result_sid,
@@ -388,6 +400,7 @@ namespace jwt_game_server {
       lock_guard<mutex> guard(m_session_lock);
       update_session_locks();
       if(!m_locked_sessions.contains(sid)) {
+        spdlog::trace("completing session {}", sid);
         m_locked_sessions.insert(
             std::make_pair(sid, session_data{ result_sid, data })
           );
@@ -406,8 +419,11 @@ namespace jwt_game_server {
       }
     }
 
-    // if a subclass chooses to overload one of the following three virtual
-    // functions, it must call the base class version
+    // If a subclass chooses to overload one of the following three virtual
+    // functions, it MUST call the base class version. Additionally, a subclass
+    // may ONLY call one of these functions from the corresponding overloaded
+    // subclass function. No thread locks should be acquired by a subclass
+    // function calling any of these three functions.
 
     virtual void process_message(const combined_id& id, const json& data) {
       spdlog::debug("player {} with session {} sent: {}",
@@ -642,8 +658,9 @@ namespace jwt_game_server {
         combined_id,
         std::owner_less<connection_hdl>
       > m_connection_ids;
-    map<combined_id, connection_hdl> m_id_connections;
-    map<session_id, std::set<player_id> > m_session_players;
+
+    unordered_map<combined_id, connection_hdl, id_hash> m_id_connections;
+    unordered_map<session_id, set<player_id>, id_hash> m_session_players;
 
     // m_connection_lock guards the members m_new_connections,
     // m_id_connections, and m_connection_ids
@@ -653,7 +670,7 @@ namespace jwt_game_server {
     std::chrono::milliseconds m_session_release_time;
 
     buffered_map<
-        map<session_id, session_data>
+        unordered_map<session_id, session_data, id_hash>
       > m_locked_sessions;
 
     // m_action_lock guards the members m_locked_sessions, and m_session_ids

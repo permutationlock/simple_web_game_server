@@ -8,13 +8,14 @@
 using json = nlohmann::json;
 
 #include <vector>
-#include <set>
-#include <map>
+#include <unordered_set>
+#include <unordered_map>
 #include <queue>
+#include <functional>
 
 using std::vector;
-using std::map;
-using std::set;
+using std::unordered_map;
+using std::unordered_set;
 using std::queue;
 
 struct minimal_player_traits {
@@ -22,21 +23,24 @@ struct minimal_player_traits {
     using player_id = unsigned long;
     using session_id = unsigned long;
 
+    struct hash {
+      std::size_t operator()(const id& id_data) const {
+        return std::hash<player_id>{}(id_data.player)
+          ^ std::hash<session_id>{}(id_data.session);
+      }
+
+      std::size_t operator()(unsigned long int_id) const {
+        return std::hash<unsigned long>{}(int_id);
+      }
+    };
+
     id() {}
     id(player_id p, session_id s) : player(p), session(s) {}
 
-    bool operator<(const id& other) const {
-      if(player < other.player) {
-        return true;
-      } else if(other.player < player) {
-        return false;
-      } else if(session < other.session) {
-        return true;
-      } else {
-        return false;
-      }
+    bool operator==(const id& other_id) const {
+      return (player == other_id.player) && (session == other_id.session);
     }
-  
+
     player_id player;
     session_id session;
   };
@@ -106,7 +110,7 @@ public:
   }
 
 private:
-  set<player_id> m_player_list;
+  unordered_set<player_id> m_player_list;
   queue<message> m_message_queue;
 };
 
@@ -114,6 +118,7 @@ class minimal_matchmaker {
 public:
   using player_traits = minimal_player_traits;
   using session_id = player_traits::id::session_id;
+  using hash_id = player_traits::id::hash;
 
   struct session_data {
     session_data(const json& data) {}
@@ -138,17 +143,17 @@ public:
   minimal_matchmaker() : m_sid_count(0) {}
 
   bool can_match(
-      const map<session_id, session_data>& session_map,
-      const set<session_id>& altered_sessions
-    )
+      const unordered_map<session_id, session_data, hash_id>& session_map,
+      const unordered_set<session_id, hash_id>& altered_sessions
+    ) const
   {
     return session_map.size() >= 2;
   }
 
   void match(
       vector<game>& game_list,
-      const map<session_id, session_data>& session_map,
-      const set<session_id>& altered_sessions
+      const unordered_map<session_id, session_data, hash_id>& session_map,
+      const unordered_set<session_id, hash_id>& altered_sessions
     )
   {
     vector<session_id> sl;
@@ -162,7 +167,7 @@ public:
   }
  
   json get_cancel_data(
-      session_id sid,
+      const session_id& sid,
       const session_data& data
     )
   {

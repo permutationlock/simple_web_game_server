@@ -3,7 +3,6 @@
 
 #include "base_server.hpp"
 
-#include <set>
 #include <chrono>
 #include <algorithm>
 #include <execution>
@@ -11,9 +10,6 @@
 namespace jwt_game_server {
   // time literals to initialize timestep variables
   using namespace std::chrono_literals;
-
-  // datatype implementations
-  using std::set;
 
   template<typename game_instance, typename jwt_clock, typename json_traits,
     typename server_config>
@@ -27,6 +23,7 @@ namespace jwt_game_server {
     using combined_id = typename super::combined_id;
     using player_id = typename super::player_id;
     using session_id = typename super::session_id;
+    using id_hash = typename super::id_hash;
 
     using json = typename super::json;
     using clock = typename super::clock;
@@ -36,7 +33,7 @@ namespace jwt_game_server {
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(combined_id, const json&)> f
-      ) : super(v, f, 30s) {}
+      ) : super(v, f, 3600s) {}
 
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
@@ -44,8 +41,8 @@ namespace jwt_game_server {
         std::chrono::milliseconds t
       ) : super(v, f, t) {}
 
-    void reset() {
-      super::reset();
+    void stop() {
+      super::stop();
 
       lock_guard<mutex> guard(m_game_list_lock);
       m_games.clear();
@@ -101,8 +98,21 @@ namespace jwt_game_server {
     }
 
   private:
-    void process_message(const combined_id& id, const json& data)
-    {
+    // send all available messages for a given game (assumes m_game_lock
+    // acquired)
+    void send_messages(const session_id& sid) {
+      auto game_it = m_games.find(sid);
+
+      while(game_it->second.has_message()) {
+        super::send_message(
+            {game_it->second.get_message().id, sid},
+            game_it->second.get_message().text
+          );
+        game_it->second.pop_message();
+      }
+    }
+
+    void process_message(const combined_id& id, const json& data) {
       super::process_message(id, data);
 
       lock_guard<mutex> guard(m_game_list_lock);
@@ -126,7 +136,7 @@ namespace jwt_game_server {
       lock_guard<mutex> game_guard(m_game_list_lock);
       auto it = m_games.find(id.session);
       if(it == m_games.end()) {
-        it = m_games.emplace(std::make_pair(id.session, game)).first;
+        it = m_games.emplace(std::make_pair(id.session, std::move(game))).first;
       }
 
       it->second.connect(id.player);
@@ -146,23 +156,11 @@ namespace jwt_game_server {
       }
     }
 
-    // send all available messages for a given game (assumes m_game_lock
-    // acquired)
-    void send_messages(session_id sid) {
-      using message = typename game_instance::message;
-      auto game_it = m_games.find(sid);
-
-      while(game_it->second.has_message()) {
-        message msg = game_it->second.get_message();
-        super::send_message({msg.id, sid}, msg.text);
-        game_it->second.pop_message();
-      }
-    }
-
     // member variables
-    map<
+    unordered_map<
         session_id,
-        game_instance
+        game_instance,
+        id_hash
       > m_games;
 
     // m_game_list_lock guards the member m_games

@@ -6,13 +6,12 @@
 #include <unordered_map>
 #include <unordered_set>
 
-TEST_CASE("minimal games should be done and not have messages") {
+TEST_CASE("minimal games should be done") {
   using json = nlohmann::json;
 
   minimal_game one_player{json{}};
 
   CHECK(one_player.is_done() == true);
-  CHECK(one_player.has_message() == false);
 }
 
 TEST_CASE("matchmaker games should track player list and data json") {
@@ -25,7 +24,8 @@ TEST_CASE("matchmaker games should track player list and data json") {
     game g{vector<session_id>{}, 0};
 
     CHECK(g.session_list.size() == 0);
-    CHECK(g.data.dump() == "{\"matched\":true}");
+    CHECK(g.data["valid"] == true);
+    CHECK(g.data["matched"] == true);
   }
 
   SUBCASE("game with two players should store correctly and parse to json") {
@@ -34,8 +34,21 @@ TEST_CASE("matchmaker games should track player list and data json") {
     CHECK(g.session_list.size() == 2);
     CHECK(g.session_list == std::vector<session_id>{8, 915});
     CHECK(g.session == 87);
+
+    CHECK(g.data["valid"] == true);
     CHECK(g.data["matched"] == true);
   }
+}
+
+TEST_CASE("matchmaker should provide simple json for invalid JWTs") {
+  using json = nlohmann::json;
+
+  minimal_matchmaker matchmaker;
+
+  json inv_data = matchmaker.get_invalid_data();
+
+  CHECK(inv_data["valid"] == false);
+  CHECK(inv_data["matched"] == false);
 }
 
 TEST_CASE("matchmaker should generate simple cancel json") {
@@ -48,6 +61,7 @@ TEST_CASE("matchmaker should generate simple cancel json") {
   session_data data{json{}};
   json cancel_data = matchmaker.get_cancel_data(471, data);
 
+  CHECK(cancel_data["valid"] == true);
   CHECK(cancel_data["matched"] == false);
 }
 
@@ -62,7 +76,8 @@ TEST_CASE("matchmaker game should track session list and data json") {
     game g{vector<session_id>{}, 0};
 
     CHECK(g.session_list.size() == 0);
-    CHECK(g.data.dump() == "{\"matched\":true}");
+    CHECK(g.data["matched"] == true);
+    CHECK(g.data["valid"] == true);
   }
 
   SUBCASE("game with two players should store correctly and parse to json") {
@@ -71,7 +86,8 @@ TEST_CASE("matchmaker game should track session list and data json") {
     CHECK(g.session_list.size() == 2);
     CHECK(g.session_list == std::vector<session_id>{8, 915});
     CHECK(g.session == 87);
-    CHECK(g.data.dump() == "{\"matched\":true}");
+    CHECK(g.data["matched"] == true);
+    CHECK(g.data["valid"] == true);
   }
 }
 

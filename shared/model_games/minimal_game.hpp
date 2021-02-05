@@ -68,19 +68,22 @@ public:
 
   minimal_game(const json& msg) {}
   
-  void connect(player_id id) {
+  void connect(vector<message>& msg_list, player_id id) {
     m_player_list.insert(id);
   }
 
-  void disconnect(player_id id) {}
+  void disconnect(vector<message>& msg_list, player_id id) {}
 
-  void player_update(player_id id, const json& data) {
+  void player_update(
+      vector<message>& msg_list, player_id id, const json& data
+    )
+  {
     for(player_id pid : m_player_list) {
-      m_message_queue.push(message{pid, data.dump()});
+      msg_list.emplace_back(pid, data.dump());
     }
   }
 
-  void game_update(long delta_time) {}
+  void game_update(vector<message>& msg_list, long delta_time) {}
 
   bool is_done() const {
     return true;
@@ -97,21 +100,8 @@ public:
     return data;
   }
 
-  bool has_message() const {
-    return !m_message_queue.empty();
-  }
-
-  const message& get_message() const {
-    return m_message_queue.front();
-  }
-
-  void pop_message() {
-    m_message_queue.pop();
-  }
-
 private:
   unordered_set<player_id> m_player_list;
-  queue<message> m_message_queue;
 };
 
 class minimal_matchmaker {
@@ -133,6 +123,7 @@ public:
       session(sid)
     {
       data["matched"] = true;
+      data["valid"] = true;
     }
 
     vector<session_id> session_list;
@@ -160,19 +151,27 @@ public:
     for(auto& spair : session_map) {
       sl.push_back(spair.first);
       if(sl.size() > 1) {
-        game_list.push_back(game{sl, m_sid_count++});
+        game_list.emplace_back(sl, m_sid_count++);
         sl.clear();
       }
     }
   }
- 
+
+  json get_invalid_data() const {
+    json temp;
+    temp["matched"] = false;
+    temp["valid"] = false;
+    return temp; 
+  }
+
   json get_cancel_data(
       const session_id& sid,
       const session_data& data
-    )
+    ) const
   {
     json temp;
     temp["matched"] = false;
+    temp["valid"] = true;
     return temp; 
   }
 

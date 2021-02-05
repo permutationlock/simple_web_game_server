@@ -15,12 +15,13 @@ namespace jwt_game_server {
   using std::unordered_set;
 
   template<typename matchmaker, typename jwt_clock, typename json_traits,
-    typename server_config>
+    typename server_config, typename close_reasons = default_close_reasons>
   class matchmaking_server : public base_server<
         typename matchmaker::player_traits,
         jwt_clock,
         json_traits,
-        server_config
+        server_config,
+        close_reasons
       >
   {
   // type definitions
@@ -29,7 +30,8 @@ namespace jwt_game_server {
         typename matchmaker::player_traits,
         jwt_clock,
         json_traits,
-        server_config
+        server_config,
+        close_reasons
       >;
 
     using combined_id = typename super::combined_id;
@@ -144,14 +146,20 @@ namespace jwt_game_server {
       }
     }
 
-    bool player_connect(const combined_id& id, const json& data) {
+    void player_connect(const combined_id& id, const json& data) {
+      super::player_connect(id, data);
+
       session_data d{data};
       if(!d.is_valid()) {
         spdlog::debug("error with player json: {}", data.dump());
-        return false;
-      }
+        super::complete_session(
+            id.session,
+            id.session,
+            m_matchmaker.get_invalid_data()
+          );
 
-      super::player_connect(id, data);
+        return;
+      }
 
       {
         lock_guard<mutex> guard(m_match_lock);
@@ -162,7 +170,6 @@ namespace jwt_game_server {
       }
 
       m_match_cond.notify_one();
-      return true;
     }
 
     void player_disconnect(const combined_id& id) {

@@ -1,9 +1,34 @@
 import React from 'react';
 import './Game.css';
 
+type SquareProps = { value: number, onClick: (MouseEvent) => void };
+
+function Square(props: SquareProps) {
+  let charFromValue = function(v: number) : string {
+    if(v > 0) { return "X"; }
+    else if(v < 0) { return "O"; }
+    else { return " " }
+  };
+
+  return (
+    <button className="Game-square" onClick={props.onClick}>
+      {charFromValue(props.value)}
+    </button>
+  );
+}
+
+type TimerProps = { name: string, time: number };
+
+function Timer(props: TimeProps) {
+  return (
+    <div className="Game-timer">
+      {this.props.name}: {this.props.time}
+    </div>
+  );
+}
+
 type GameState = {
   socket: WebSocket | null,
-  playing: boolean,
   done: boolean,
   board: Array<number>,
   time: number,
@@ -20,7 +45,7 @@ class Game extends React.Component<GameProps, GameState> {
 
     this.state = {
       socket: null,
-      playing: false,
+      connected: false,
       done: false,
       board: [ 0, 0, 0,
                0, 0, 0,
@@ -29,44 +54,105 @@ class Game extends React.Component<GameProps, GameState> {
       opponent_time: 0.00,
       status: 0
     };
+
+    this.close_reasons = {
+      "INVALID_TOKEN",
+      "DUPLICATE_CONNECTION",
+      "SERVER_SHUTDOWN",
+      "SESSION_COMPLETE"
+    };
   }
 
   componentDidMount() {
-    const { token } = this.props.match.params;
+    connect();
+  }
 
-    var ws = new WebSocket("ws://localhost:9091");
+  connect() {
+    if(this.state.connected == false && this.state.done == false) {
+      const { token } = this.props.match.params;
 
-    console.log(token);
-    ws.onopen = () => {
-      this.setState({ socket: ws, matching: true, matched: false });
-      this.state.socket!.send(token);
-    };
-    
-    ws.onmessage = (e) => {
-      this.setState({ matching: false, matched: true});
-      this.props.history.push("/game/" + e.data);
-    };
+      var ws_uri = "ws://localhost:9090";
+      var ws = new WebSocket(ws_uri);
 
-    ws.onclose = () => {
-      if(!this.state.matched) {
-        this.setState({ matching: false });
-        this.props.history.push("/");
-      }
-    };
+      console.log("attempting to connect to " + ws_uri);
+
+      console.log(token);
+      ws.onopen = () => {
+        console.log("connected to " + ws_uri);
+        this.setState({
+            socket: ws,
+            connected: true,
+            done: false
+          });
+        this.state.socket!.send(token);
+      };
+
+      ws.onmessage = (e) => {
+        console.log("received ws message: " + e.data);
+        this.setState({ matching: false, matched: true});
+        this.props.history.push("/game/" + e.data);
+      };
+
+      ws.onclose = (e) => {
+        console.log("disconnected from " + ws_uri +": " + e.reason);
+        this.setState({ socket: null, connected: false });
+
+        if(e.reason in this.close_reasons) {
+          // disconnect for valid reason, session over
+          this.setState({
+              done: true
+            });
+        } else {
+          // disconnected for unknown reason, attempt to reconnect
+          this.connect();
+        }
+      };
+
+      // attempt to reconnect in 1 second to verify connection
+      setTimeout(this.connect, 1000);
+    }
   }
 
   stopMatchmaking() {
-    if(this.state.socket != null) {
+    if(this.state.connected == true) {
       this.state.socket.send("stop");
     }
   }
 
   render() {
+    let renderSquare = function(i: number) {
+      return (
+        <Square
+          value={this.state.board[i]}
+          onClick={() => this.props.onClick(i)}
+        />
+      );
+    };
+
     return (
       <div className="Game">
-        <p>searching for game</p>
-        <button disabled={!this.state.matching}
-          onClick={this.stopMatchmaking.bind(this)}>Cancel matchmaking</button>
+        <div className="Game-message">
+          {this.state.message}
+        </div>
+        <div className="Game-board-row">
+          {this.renderSquare(0)}
+          {this.renderSquare(1)}
+          {this.renderSquare(2)}
+        </div>
+        <div className="Game-board-row">
+          {this.renderSquare(3)}
+          {this.renderSquare(4)}
+          {this.renderSquare(5)}
+        </div>
+        <div className="Game-board-row">
+          {this.renderSquare(6)}
+          {this.renderSquare(7)}
+          {this.renderSquare(8)}
+        </div>
+        <div className="Game-timers">
+          <Timer name="You" time={this.state.time} />
+          <Timer name="Opponent" time={this.state.opponent_time} />
+        </div>
       </div>
     );
   }

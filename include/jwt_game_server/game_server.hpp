@@ -13,48 +13,97 @@ namespace jwt_game_server {
 
   template<typename game_instance, typename jwt_clock, typename json_traits,
     typename server_config, typename close_reasons = default_close_reasons>
-  class game_server : public base_server<typename game_instance::player_traits,
-      jwt_clock, json_traits, server_config, close_reasons>
-  {
+  class game_server {
   // type definitions
   private:
-    using super = base_server<typename game_instance::player_traits, jwt_clock,
-      json_traits, server_config, close_reasons>;
+    using jwt_base_server = base_server<
+        typename game_instance::player_traits,
+        jwt_clock,
+        json_traits,
+        server_config,
+        close_reasons
+      >;
 
-    using combined_id = typename super::combined_id;
-    using player_id = typename super::player_id;
-    using session_id = typename super::session_id;
-    using id_hash = typename super::id_hash;
+    using combined_id = typename jwt_base_server::combined_id;
+    using player_id = typename jwt_base_server::player_id;
+    using session_id = typename jwt_base_server::session_id;
+    using id_hash = typename jwt_base_server::id_hash;
 
     using message = typename game_instance::message;
 
-    using json = typename super::json;
-    using clock = typename super::clock;
+    using json = typename jwt_base_server::json;
+    using clock = typename jwt_base_server::clock;
 
   // main class body
   public:
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
-        function<std::string(combined_id, const json&)> f
-      ) : super(v, f, 3600s) {}
+        function<std::string(combined_id, const json&)> f,
+        std::chrono::milliseconds t
+      ) : m_jwt_server(v, f, t)
+    {
+      m_jwt_server.set_open_handler(
+          bind(
+            &game_server::player_connect,
+            this,
+            jwt_game_server::_1,
+            jwt_game_server::_2
+          )
+        );
+      m_jwt_server.set_close_handler(
+          bind(
+            &game_server::player_disconnect,
+            this,
+            jwt_game_server::_1
+          )
+        );
+      m_jwt_server.set_message_handler(
+          bind(
+            &game_server::process_message,
+            this,
+            jwt_game_server::_1,
+            jwt_game_server::_2
+          )
+        );
+    }
 
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
-        function<std::string(combined_id, const json&)> f,
-        std::chrono::milliseconds t
-      ) : super(v, f, t) {}
+        function<std::string(combined_id, const json&)> f
+      ) : game_server(v, f, 3600s) {}
+
+    void run(uint16_t port, bool unlock_address = false) {
+      m_jwt_server.run(port, unlock_address);
+    }
+
+    void process_messages() {
+      m_jwt_server.process_messages();
+    }
+
+    void reset() {
+      stop();
+      m_jwt_server.reset();
+    }
 
     void stop() {
-      super::stop();
+      m_jwt_server.stop();
 
       lock_guard<mutex> guard(m_game_list_lock);
       m_games.clear();
       m_messages.clear();
     }
 
+    std::size_t get_player_count() {
+      return m_jwt_server.get_player_count();
+    }
+
+    bool is_running() {
+      return m_jwt_server.is_running();
+    }
+
     void update_games(std::chrono::milliseconds timestep) {
       auto time_start = clock::now();
-      while(super::is_running()) {
+      while(m_jwt_server.is_running()) {
         const auto delta_time =
           std::chrono::duration_cast<std::chrono::milliseconds>(
             clock::now() - time_start
@@ -110,7 +159,7 @@ namespace jwt_game_server {
 
           // complete sessions and send result tokens out for finished games
           for(const auto& sid_json_pair : complete_games) { 
-            super::complete_session(
+            m_jwt_server.complete_session(
                 sid_json_pair.first,
                 sid_json_pair.first,
                 sid_json_pair.second
@@ -135,7 +184,7 @@ namespace jwt_game_server {
       )
     {
       for(const message& msg : message_list) {
-        super::send_message(
+        m_jwt_server.send_message(
             { msg.id, sid },
             msg.text
           );
@@ -143,8 +192,6 @@ namespace jwt_game_server {
     }
 
     void process_message(const combined_id& id, const json& data) {
-      super::process_message(id, data);
-
       unique_lock<mutex> lock(m_game_list_lock);
       auto it = m_games.find(id.session);
       if(it != m_games.end()) {
@@ -156,8 +203,6 @@ namespace jwt_game_server {
     }
 
     void player_connect(const combined_id& id, const json& data) {
-      super::player_connect(id, data);
-
       unique_lock<mutex> lock(m_game_list_lock);
       auto it = m_games.find(id.session);
       if(it == m_games.end()) {
@@ -165,7 +210,10 @@ namespace jwt_game_server {
 
         if(!game.is_valid()) {
           spdlog::error("connection provided invalid game data");
-          super::complete_session(id.session, id.session, game.get_state());
+          lock.unlock();
+          m_jwt_server.complete_session(
+              id.session, id.session, game.get_state()
+            );
           return;
         }
 
@@ -181,7 +229,6 @@ namespace jwt_game_server {
     }
 
     void player_disconnect(const combined_id& id) {
-      super::player_disconnect(id);
       {
         unique_lock<mutex> game_lock(m_game_list_lock);
         auto it = m_games.find(id.session);
@@ -211,6 +258,8 @@ namespace jwt_game_server {
 
     // m_game_list_lock guards the member m_games
     mutex m_game_list_lock;
+
+    jwt_base_server m_jwt_server;
   };
 }
 

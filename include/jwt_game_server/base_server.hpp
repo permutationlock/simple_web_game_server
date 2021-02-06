@@ -75,7 +75,6 @@ namespace jwt_game_server {
       explicit server_error(const char* what_arg) noexcept : super(what_arg) {}
     };
 
-  protected:
     using combined_id = typename player_traits::id;
     using player_id = typename combined_id::player_id;
     using session_id = typename combined_id::session_id;
@@ -83,9 +82,10 @@ namespace jwt_game_server {
 
     using json = typename json_traits::json;
     using clock = std::chrono::high_resolution_clock;
-    using time_point = std::chrono::time_point<clock>;
 
   private:
+    using time_point = std::chrono::time_point<clock>;
+
     enum action_type {
       SUBSCRIBE,
       UNSUBSCRIBE,
@@ -160,7 +160,10 @@ namespace jwt_game_server {
         function<std::string(const combined_id&, const json&)> f,
         std::chrono::milliseconds t
       ) : m_is_running(false), m_jwt_verifier(v), m_get_result_str(f),
-          m_session_release_time(t)
+          m_session_release_time(t),
+          m_handle_open([](const combined_id&, const json&){}),
+          m_handle_close([](const combined_id&){}),
+          m_handle_message([](const combined_id&, const json&){})
     {
       m_server.init_asio();
 
@@ -174,7 +177,31 @@ namespace jwt_game_server {
         );
     }
 
-    void run(uint16_t port, bool unlock_address = false) {      
+    void set_open_handler(function<void(const combined_id&,const json&)> f) {
+      if(!m_is_running) {
+        m_handle_open = f;
+      } else {
+        throw server_error{"set_open_handler called on running server"};
+      }
+    }
+
+    void set_close_handler(function<void(const combined_id&)> f) {
+      if(!m_is_running) {
+        m_handle_close = f;
+      } else {
+        throw server_error{"set_close_handler called on running server"};
+      }
+    }
+
+    void set_message_handler(function<void(const combined_id&,const json&)> f) {
+      if(!m_is_running) {
+        m_handle_message = f;
+      } else {
+        throw server_error{"set_message_handler called on running server"};
+      }
+    }
+
+    void run(uint16_t port, bool unlock_address) {
       if(!m_is_running) {
         spdlog::info("server is listening on port {}", port);
         m_is_running = true;
@@ -202,13 +229,12 @@ namespace jwt_game_server {
 
     void reset() {
       if(m_is_running) {
-        this->stop();
+        stop();
       }
       m_server.reset();
     }
 
-    // stop may be overloaded for subclasses to clear data and halt threads
-    virtual void stop() {
+    void stop() {
       if(m_is_running) {
         m_is_running = false;
         m_server.stop_listening();
@@ -288,7 +314,7 @@ namespace jwt_game_server {
             // connection provided a player id
             combined_id id = it->second;
             conn_lock.unlock();
-            this->player_disconnect(id);
+            player_disconnect(a.hdl, id);
           }
         } else if (a.type == IN_MESSAGE) {
           spdlog::trace("processing IN_MESSAGE action");
@@ -298,7 +324,7 @@ namespace jwt_game_server {
           if(it == m_connection_ids.end()) {
             spdlog::trace("recieved message from connection w/no id");
             conn_lock.unlock();
-            this->open_session(a.hdl, a.msg);
+            open_session(a.hdl, a.msg);
           } else {
             combined_id id = it->second;
             conn_lock.unlock();
@@ -319,7 +345,7 @@ namespace jwt_game_server {
                 );
               return;
             }
-            this->process_message(id, msg_json);
+            process_message(id, msg_json);
           }
         } else if(a.type == OUT_MESSAGE) {
           spdlog::trace("processing OUT_MESSAGE action");
@@ -353,7 +379,6 @@ namespace jwt_game_server {
       return m_connection_ids.size();
     }
 
-  protected:
     void send_message(const combined_id& id, const std::string& msg) {
       connection_hdl hdl;
       if(get_connection_hdl_from_id(hdl, id)) {
@@ -404,51 +429,45 @@ namespace jwt_game_server {
       }
     }
 
-    // If a subclass chooses to overload one of the following three virtual
-    // functions, it MUST call the base class version. Additionally, a subclass
-    // may ONLY call one of these functions from the corresponding overloaded
-    // subclass function. No thread locks should be acquired by a subclass
-    // function calling any of these three functions.
-
-    virtual void process_message(const combined_id& id, const json& data) {
+  private:
+    void process_message(const combined_id& id, const json& data) {
       spdlog::debug("player {} with session {} sent: {}",
           id.player, id.session, data.dump());
+      m_handle_message(id, data);
     }
 
-    virtual void player_connect(const combined_id& id, const json& data) {
+    void player_connect(const combined_id& id, const json& data) {
       spdlog::debug(
           "player {} connected with session {}: {}",
           id.player,
           id.session,
           data.dump()
         );
+      m_handle_open(id, data);
     }
 
-    virtual void player_disconnect(const combined_id& id) {
-      connection_hdl hdl;
-      if(get_connection_hdl_from_id(hdl, id)) {
-        {
-          lock_guard<mutex> connection_guard(m_connection_lock);
-          m_connection_ids.erase(hdl);
-          m_id_connections.erase(id);
-        }
-        {
-          lock_guard<mutex> session_guard(m_session_lock);
-          auto it = m_session_players.find(id.session);
-          if(it != m_session_players.end()) {
-            it->second.erase(id.player);
-            if(it->second.empty()) {
-              m_session_players.erase(it);
-            }
+    void player_disconnect(connection_hdl hdl, const combined_id& id) {
+      {
+        lock_guard<mutex> connection_guard(m_connection_lock);
+        m_connection_ids.erase(hdl);
+        m_id_connections.erase(id);
+      }
+      {
+        lock_guard<mutex> session_guard(m_session_lock);
+        auto it = m_session_players.find(id.session);
+        if(it != m_session_players.end()) {
+          it->second.erase(id.player);
+          if(it->second.empty()) {
+            m_session_players.erase(it);
           }
         }
       }
 
       spdlog::debug("player {} with session {} disconnected",
           id.player, id.session);
+      m_handle_close(id);
     }
 
-  private:
     bool get_connection_hdl_from_id(
         connection_hdl& hdl,
         const combined_id& id
@@ -574,12 +593,12 @@ namespace jwt_game_server {
       combined_id id{pid, sid};
 
       if(completed) {
-        unique_lock<mutex> lock(m_session_lock);
+        unique_lock<mutex> session_lock(m_session_lock);
         update_session_locks();
 
         if(!m_locked_sessions.contains(id.session)) {
           {
-            lock_guard<mutex> guard(m_connection_lock);
+            lock_guard<mutex> connection_guard(m_connection_lock);
 
             // immediately close duplicate connections to avoid complications
             {
@@ -613,9 +632,9 @@ namespace jwt_game_server {
           }
 
           m_session_players[sid].insert(id.player);
-          lock.unlock();
+          session_lock.unlock();
 
-          this->player_connect(id, login_json);
+          player_connect(id, login_json);
         } else {
           send_to_hdl(
               hdl,
@@ -668,6 +687,11 @@ namespace jwt_game_server {
     // m_action_lock guards the member m_actions
     mutex m_action_lock;
     condition_variable m_action_cond;
+
+    // functions to handle client actions
+    function<void(const combined_id&, const json&)> m_handle_open;
+    function<void(const combined_id&)> m_handle_close;
+    function<void(const combined_id&, const json&)> m_handle_message;
   };
 }
 

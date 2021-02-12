@@ -442,7 +442,7 @@ namespace jwt_game_server {
 
   private:
     void process_message(const combined_id& id, std::string&& data) {
-      m_handle_message(id, std::forward<json>(data));
+      m_handle_message(id, std::forward<std::string>(data));
     }
 
     void player_connect(const combined_id& id, const json& data) {

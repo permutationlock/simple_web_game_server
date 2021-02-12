@@ -195,7 +195,7 @@ public:
     }
   }
   
-  void connect(player_id id) {
+  void connect(vector<message>& msg_list, player_id id) {
     spdlog::trace("tic tac toe connect player {}", id);
     if(m_data_map.count(id) < 1) {
       m_data_map[id] = player_data{};
@@ -204,7 +204,7 @@ public:
 
     m_data_map[id].is_connected = true;
 
-    send(id, get_game_state(id));
+    msg_list.emplace_back(id, get_game_state(id).dump());
 
     if(!m_data_map[id].has_connected) {
       m_data_map[id].has_connected = true;
@@ -226,7 +226,7 @@ public:
     }
   }
 
-  void disconnect(player_id id) {
+  void disconnect(vector<message>& msg_list, player_id id) {
     m_data_map[id].is_connected = false;
 
     bool done = true;
@@ -241,7 +241,12 @@ public:
     }
   }
 
-  void player_update(player_id id, const json& data) {
+  void player_update(
+      vector<message>& msg_list,
+      player_id id,
+      const json& data
+    )
+  {
     try {
       unsigned int i = data["move"][0].get<unsigned int>();
       unsigned int j = data["move"][1].get<unsigned int>();
@@ -253,7 +258,7 @@ public:
               m_xmove = false;
               m_move_list.push_back(data["move"]);
               for(player_id player : m_player_list) {
-                send(player, get_game_state(player));
+                msg_list.emplace_back(player, get_game_state(player).dump());
               }
             } else {
               spdlog::debug("player {} sent invalid move: {}", id, data.dump());
@@ -267,7 +272,7 @@ public:
               m_xmove = true;
               m_move_list.push_back(data["move"]);
               for(player_id player : m_player_list) {
-                send(player, get_game_state(player));
+                msg_list.emplace_back(player, get_game_state(player).dump());
               }
             } else {
               spdlog::debug("player {} sent invalid move: {}", id, data.dump());
@@ -282,7 +287,7 @@ public:
     }
   }
 
-  void game_update(long delta_time) {
+  void game_update(vector<message>& msg_list, long delta_time) {
     if(m_started && !m_game_over) {
       if(m_xmove) {
         m_xtime -= delta_time;
@@ -301,10 +306,7 @@ public:
       }
 
       for(player_id player : m_player_list) {
-        send(player, get_time_state(player));
-        if(m_game_over) {
-          send(player, get_game_state(player));
-        }
+        msg_list.emplace_back(player, get_time_state(player).dump());
       }
     }
   }
@@ -331,23 +333,7 @@ public:
     return m_valid;
   }
 
-  bool has_message() const {
-    return !m_message_queue.empty();
-  }
-
-  const message& get_message() const {
-    return m_message_queue.front();
-  }
-
-  void pop_message() {
-    m_message_queue.pop();
-  }
-
 private:
-  void send(player_id id, const json& msg) {
-    m_message_queue.push(message{id, msg.dump()});
-  }
-
   void start() {
      m_started = true;
   }
@@ -380,8 +366,6 @@ private:
 
   vector<player_id> m_player_list;
   unordered_map<player_id, player_data> m_data_map;
-
-  queue<message> m_message_queue;
 
   bool m_valid;
   bool m_started;

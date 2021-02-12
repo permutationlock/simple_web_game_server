@@ -34,7 +34,7 @@ struct minimal_player_traits {
       }
     };
 
-    id() {}
+    id() : player(0), session(0) {}
     id(player_id p, session_id s) : player(p), session(s) {}
 
     bool operator==(const id& other_id) const {
@@ -58,48 +58,44 @@ class minimal_game {
 public:
   using player_traits = minimal_player_traits;
   using player_id = player_traits::id::player_id;
+  using message = std::pair<player_id, std::string>;
 
-  struct message {
-    message(player_id i, const std::string& t) : id(i), text(t) {}
-
-    player_id id;
-    std::string text;
-  };
-
-  minimal_game(const json& msg) {}
+  minimal_game(const json& data) {}
   
-  void connect(vector<message>& msg_list, player_id id) {
+  void connect(player_id id) {
     m_player_list.insert(id);
   }
 
-  void disconnect(vector<message>& msg_list, player_id id) {}
+  void disconnect(player_id id) {
+    m_player_list.erase(id);
+  }
 
-  void player_update(
-      vector<message>& msg_list, player_id id, const json& data
+  void update(
+      vector<message>& out_msg_list,
+      const vector<message>& in_msg_list,
+      long delta_time
     )
   {
-    for(player_id pid : m_player_list) {
-      msg_list.emplace_back(pid, data.dump());
+    for(const message& msg : in_msg_list) {
+      for(player_id pid : m_player_list) {
+        out_msg_list.emplace_back(pid, msg.second);
+      }
     }
   }
 
-  void game_update(vector<message>& msg_list, long delta_time) {}
-
   bool is_done() const {
-    return true;
+    return m_player_list.empty();
   }
-  
+
   bool is_valid() const {
     return true;
   }
 
   json get_state() const {
     json data;
-    data["done"] = true;
-    data["players"] = m_player_list;
+    data["valid"] = true;
     return data;
   }
-
 private:
   unordered_set<player_id> m_player_list;
 };
@@ -123,7 +119,6 @@ public:
       session(sid)
     {
       data["matched"] = true;
-      data["valid"] = true;
     }
 
     vector<session_id> session_list;
@@ -134,17 +129,15 @@ public:
   minimal_matchmaker() : m_sid_count(0) {}
 
   bool can_match(
-      const unordered_map<session_id, session_data, hash_id>& session_map,
-      const unordered_set<session_id, hash_id>& altered_sessions
-    ) const
+      const unordered_map<session_id, session_data, hash_id>& session_map
+    )
   {
-    return session_map.size() >= 2;
+    return session_map.size() > 1;
   }
 
   void match(
       vector<game>& game_list,
-      const unordered_map<session_id, session_data, hash_id>& session_map,
-      const unordered_set<session_id, hash_id>& altered_sessions
+      const unordered_map<session_id, session_data, hash_id>& session_map
     )
   {
     vector<session_id> sl;
@@ -157,21 +150,12 @@ public:
     }
   }
 
-  json get_invalid_data() const {
-    json temp;
-    temp["matched"] = false;
-    temp["valid"] = false;
-    return temp; 
-  }
-
   json get_cancel_data(
-      const session_id& sid,
-      const session_data& data
+      const session_id& sid
     ) const
   {
     json temp;
     temp["matched"] = false;
-    temp["valid"] = true;
     return temp; 
   }
 

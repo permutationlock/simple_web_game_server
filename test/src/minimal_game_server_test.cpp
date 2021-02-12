@@ -144,14 +144,17 @@ TEST_CASE("players should interact with the server with no errors") {
 
   CHECK(oss.str() == std::string{""});
 
-  SUBCASE("games start when players connect") {
-    game_thr = std::thread{
-        bind(&minimal_game_server::update_games, &gs, 100s)
-      };
+  game_thr = std::thread{
+      bind(&minimal_game_server::update_games, &gs, 10ms)
+    };
 
+  SUBCASE("games start when players connect") {
     std::vector<player_id> player_list = { 83, 2, 17, 339 };
     PLAYER_COUNT = player_list.size();
     const std::size_t GAME_SIZE = 2;
+
+    CHECK(gs.get_player_count() == 0);
+    CHECK(gs.get_game_count() == 0);
     
     create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
 
@@ -205,80 +208,6 @@ TEST_CASE("players should interact with the server with no errors") {
     CHECK(gs.get_player_count() == 0);
     CHECK(gs.get_game_count() == 0);
     CHECK(oss.str() == std::string{""});
-  }
-
-  SUBCASE("player messages should be echoed back") {
-    game_thr = std::thread{
-        bind(&minimal_game_server::update_games, &gs, 100s)
-      };
-
-    std::vector<player_id> player_list = { 66, 88 };
-    PLAYER_COUNT = player_list.size();
-    const std::size_t GAME_SIZE = 1;
-    
-    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
-
-    create_clients<player_id, minimal_game_client, test_client_data>(
-        clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
-      );
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    std::string message{"{\"text\":\"hello in there\"}"};
-
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      clients[i].send(message);
-    }
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      CHECK(client_data_list[i].messages.back() == message);
-      CHECK(client_data_list[i].messages.size() == 1);
-    }
-  }
-
-  SUBCASE("player messages should be echoed back to all players in the game") {
-    game_thr = std::thread{
-        bind(&minimal_game_server::update_games, &gs, 100s)
-      };
-
-    std::vector<player_id> player_list = { 88213, 6, 934, 101010 };
-    PLAYER_COUNT = player_list.size();
-    const std::size_t GAME_SIZE = 2;
-    
-    create_game_tokens(tokens, player_list, secret, issuer, GAME_SIZE);
-
-    create_clients<player_id, minimal_game_client, test_client_data>(
-        clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
-      );
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    std::string message{"{\"test\":\"hello all!\"}"};
-
-    // have one player in each game send a message
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      if(i % GAME_SIZE == 0) {
-        clients[i].send(message);
-      }
-    }
-
-    std::this_thread::sleep_for(100ms);
-
-    CHECK(oss.str() == std::string{""});
-
-    // check all players received the echo
-    for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
-      CHECK(client_data_list[i].messages.back() == message);
-      CHECK(client_data_list[i].messages.size() == 1);
-    }
   }
 
   SUBCASE("only most recent client with a given token id should remain open") {

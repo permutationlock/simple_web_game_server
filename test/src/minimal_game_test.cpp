@@ -6,12 +6,13 @@
 #include <unordered_map>
 #include <unordered_set>
 
-TEST_CASE("minimal games should be done") {
+TEST_CASE("minimal games should be done and valid") {
   using json = nlohmann::json;
 
   minimal_game one_player{json{}};
 
   CHECK(one_player.is_done() == true);
+  CHECK(one_player.is_valid() == true);
 }
 
 TEST_CASE("matchmaker games should track player list and data json") {

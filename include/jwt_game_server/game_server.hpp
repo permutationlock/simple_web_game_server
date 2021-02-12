@@ -29,16 +29,26 @@ namespace jwt_game_server {
     using session_id = typename jwt_base_server::session_id;
     using id_hash = typename jwt_base_server::id_hash;
 
-    using message = typename game_instance::message;
+    using message = pair<player_id, std::string>;
 
     using json = typename jwt_base_server::json;
     using clock = typename jwt_base_server::clock;
+
+    struct connection_update {
+      connection_update(const combined_id& i) : id(i), disconnection(true) {}
+      connection_update(const combined_id& i, const json& d) : id(i),
+        data(d), disconnection(true) {}
+
+      combined_id id;
+      json data;
+      bool disconnection;
+    };
 
   // main class body
   public:
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
-        function<std::string(combined_id, const json&)> f,
+        function<std::string(const combined_id&, const json&)> f,
         std::chrono::milliseconds t
       ) : m_jwt_server(v, f, t)
     {
@@ -69,7 +79,7 @@ namespace jwt_game_server {
 
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
-        function<std::string(combined_id, const json&)> f
+        function<std::string(const combined_id&, const json&)> f
       ) : game_server(v, f, 3600s) {}
 
     void run(uint16_t port, bool unlock_address = false) {
@@ -88,9 +98,18 @@ namespace jwt_game_server {
     void stop() {
       m_jwt_server.stop();
 
-      lock_guard<mutex> guard(m_game_list_lock);
-      m_games.clear();
-      m_messages.clear();
+      {
+        lock_guard<mutex> guard(m_game_list_lock);
+        m_games.clear();
+      }
+      {
+        lock_guard<mutex> guard(m_in_message_list_lock);
+        m_in_messages.clear();
+      }
+      {
+        lock_guard<mutex> guard(m_connection_update_list_lock);
+        m_connection_updates.clear();
+      }
     }
 
     std::size_t get_player_count() {
@@ -108,66 +127,66 @@ namespace jwt_game_server {
           std::chrono::duration_cast<std::chrono::milliseconds>(
             clock::now() - time_start
           );
+        const long dt_count = delta_time.count();
 
-        if(delta_time >= timestep) {
-          unique_lock<mutex> game_lock(m_game_list_lock);
+        unordered_map<
+            session_id,
+            vector<message>,
+            id_hash
+          > out_messages;
 
-          // ensure that each game has a vector to save messages to
-          for(auto it = m_games.begin(); it != m_games.end(); it++) {
-            m_messages.try_emplace(it->first, vector<message>{});
-          }
-
-          time_start = clock::now();
-          // game updates are completely independent, so exec in parallel
-          std::for_each(
-              std::execution::par,
-              m_games.begin(),
-              m_games.end(),
-              [=](auto& key_val_pair){
-                key_val_pair.second.game_update(
-                    m_messages[key_val_pair.first],
-                    delta_time.count()
-                  );
-              }
-            );
-
+        unique_lock<mutex> game_lock(m_game_list_lock);
+        if(m_games.empty()) {
           game_lock.unlock();
+          unique_lock<mutex> conn_lock(m_connection_update_list_lock);
+          while(m_connection_updates.empty()) {
+            m_game_condition.wait(conn_lock);
+            if(!m_jwt_server.is_running()) {
+              return;
+            }
+          }
+          game_lock.lock();
+        }
 
-          // base_server actions are thread locked so send messages in sequence
-          for(auto it = m_messages.begin(); it != m_messages.end(); it++) {
-            send_messages(it->first, it->second);
+        if(delta_time < timestep) {
+          game_lock.unlock();
+          std::this_thread::sleep_for(std::min(1ms, timestep-delta_time));
+        } else {
+          time_start = clock::now();
+          process_connection_updates();
+
+          // we remove game data here to catch any possible players submitting
+          // new connections in the last timestep when the game session ends
+          for(session_id sid : finished_games) {
+              out_messages.erase(sid);
+              m_games.erase(sid);
+          }
+          finished_games.clear();
+
+          process_game_updates(out_messages);
+
+          for(auto it = out_messages.begin(); it != out_messages.end(); ++it) {
+            for(const message& msg : it->second) {
+              m_jwt_server.send_message(
+                  { msg.first, it->first },
+                  msg.second
+                );
+            }
             it->second.clear();
           }
 
-          std::vector<std::pair<session_id, json> > complete_games;
-          
-          game_lock.lock();
-
-          // erase finished games
-          for(auto it = m_games.begin(); it != m_games.end();) {
+          for(auto it = m_games.begin(); it != m_games.end(); ++it) {
             if(it->second.is_done()) {
               spdlog::debug("game session {} ended", it->first);
-              m_messages.erase(it->first);
-              complete_games.emplace_back(it->first, it->second.get_state());
-              it = m_games.erase(it);
-            } else {
-              it++;
+              m_jwt_server.complete_session(
+                  it->first,
+                  it->first,
+                  it->second.get_state()
+                );
+              finished_games.push_back(it->first);
             }
           }
-
-          game_lock.unlock();
-
-          // complete sessions and send result tokens out for finished games
-          for(const auto& sid_json_pair : complete_games) { 
-            m_jwt_server.complete_session(
-                sid_json_pair.first,
-                sid_json_pair.first,
-                sid_json_pair.second
-              );
-          }
         }
-
-        std::this_thread::sleep_for(std::min(1ms, timestep-delta_time));
       }
     }
 
@@ -177,70 +196,94 @@ namespace jwt_game_server {
     }
 
   private:
-    // send given list of game messages to players
-    void send_messages(
-        const session_id& sid,
-        const vector<message>& message_list
-      )
-    {
-      for(const message& msg : message_list) {
-        m_jwt_server.send_message(
-            { msg.id, sid },
-            msg.text
-          );
+    void process_connections() {
+      vector<connection_update> connection_updates;
+      {
+        lock_guard<mutex> conn_guard(m_connection_update_list_lock);
+        std::swap(connection_updates, m_connection_updates);
+      }
+
+      for(connection_update& update : connection_updates) {
+        auto it = m_games.find(update.id.session);
+        if(update.disconnection) {
+          if(it != m_games.end()) {
+            it->second.disconnect(update.id.player);
+          }
+        } else {
+          if(it == m_games.end()) {
+            game_instance game{update.data};
+
+            if(!game.is_valid()) {
+              spdlog::error("connection provided invalid game data");
+              m_jwt_server.complete_session(
+                  update.id.session, update.id.session, game.get_state()
+                );
+              continue;
+            }
+            it = m_games.emplace(
+                update.id.session, std::move(game)
+              ).first;
+            out_messages.emplace(
+                update.id.session, vector<message>{}
+              );
+          }
+     
+          it->second.connect(update.id.player);
+        }
       }
     }
 
-    void process_message(const combined_id& id, const json& data) {
-      unique_lock<mutex> lock(m_game_list_lock);
-      auto it = m_games.find(id.session);
-      if(it != m_games.end()) {
-        vector<message> msg_list;
-        it->second.player_update(msg_list, id.player, data);
-        lock.unlock();
-        send_messages(id.session, msg_list);
+    void process_game_updates(
+        unordered_map<session_id, vector<message>, id_hash>& out_messages
+      )
+    {
+      unordered_map<session_id, vector<message>, id_hash> in_messages;
+      in_messages.reserve(m_games.size());
+      {
+        lock_guard<mutex> msg_guard(m_in_message_list_lock);
+        std::swap(in_messages, m_in_messages);
       }
+
+      // game updates are completely independent, so exec in parallel
+      std::for_each(
+          std::execution::par,
+          m_games.begin(),
+          m_games.end(),
+          [&](auto& key_val_pair){
+            auto in_msg_it = in_messages.find(key_val_pair.first);
+            if(in_msg_it != in_messages.end()) {
+              key_val_pair.second.update(
+                  out_messages.at(key_val_pair.first),
+                  it->second,
+                  dt_count
+                );
+            } else {
+              key_val_pair.second.update(
+                  out_messages.at(key_val_pair.first),
+                  vector<message>{},
+                  dt_count
+                );
+            }
+          }
+        );
+    }
+
+    void process_message(const combined_id& id, const std::string& data) {
+      lock_guard<mutex> msg_guard(m_in_message_list_lock);
+      m_in_messages[id.session].emplace_back(id.player, data);
     }
 
     void player_connect(const combined_id& id, const json& data) {
-      unique_lock<mutex> lock(m_game_list_lock);
-      auto it = m_games.find(id.session);
-      if(it == m_games.end()) {
-        game_instance game{data};
-
-        if(!game.is_valid()) {
-          spdlog::error("connection provided invalid game data");
-          lock.unlock();
-          m_jwt_server.complete_session(
-              id.session, id.session, game.get_state()
-            );
-          return;
-        }
-
-        it = m_games.emplace(id.session, std::move(game)).first;
+      {
+        lock_guard<mutex> guard(m_connection_update_list_lock);
+        m_connection_updates.emplace_back(id, data);
       }
- 
-      vector<message> msg_list;
-      it->second.connect(msg_list, id.player);
-
-      lock.unlock();
-
-      send_messages(id.session, msg_list);
+      m_game_condition.notify_one();
     }
 
     void player_disconnect(const combined_id& id) {
-      {
-        unique_lock<mutex> game_lock(m_game_list_lock);
-        auto it = m_games.find(id.session);
-        if(it != m_games.end()) {
-          vector<message> msg_list;
-          it->second.disconnect(msg_list, id.player);
-
-          game_lock.unlock();
-
-          send_messages(id.session, msg_list);
-        }
-      }
+      lock_guard<mutex> guard(m_connection_update_list_lock);
+      m_connection_updates.emplace_back(id);
     }
 
     // member variables
@@ -249,15 +292,19 @@ namespace jwt_game_server {
         game_instance,
         id_hash
       > m_games;
+    mutex m_game_list_lock;
 
     unordered_map<
         session_id,
         vector<message>,
         id_hash
-      > m_messages;
+      > m_in_messages;
+    mutex m_in_message_list_lock;
 
-    // m_game_list_lock guards the member m_games
-    mutex m_game_list_lock;
+    std::vector<connection_update> m_connection_updates;
+    mutex m_connection_update_list_lock;
+
+    condition_variable m_game_condition;
 
     jwt_base_server m_jwt_server;
   };

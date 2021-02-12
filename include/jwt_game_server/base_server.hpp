@@ -125,12 +125,16 @@ namespace jwt_game_server {
       }
 
       const mapped_type& at(const key_type& key) const {
-        if(m_map1.count(key) > 0) {
-          return m_map1.find(key)->second;
-        } else if(m_map2.count(key) > 0) {
-          return m_map2.find(key)->second;
+        auto it = m_map1.find(key);
+        if(it != m_map1.end()) {
+          return it->second;
         } else {
-          throw std::out_of_range{"key not in buffered_map"};
+          it = m_map2.find(key);
+          if(it != m_map2.end()) {
+            return it->second;
+          } else {
+            throw std::out_of_range{"key not in buffered_map"};
+          }
         }
       }
 
@@ -335,17 +339,7 @@ namespace jwt_game_server {
                 id.session
               );
 
-            json msg_json;
-            try {
-              json_traits::parse(msg_json, a.msg);
-            } catch(std::exception& e) {
-              spdlog::debug(
-                  "update from player {} with session {} was not valid json",
-                  id.player, id.session
-                );
-              return;
-            }
-            process_message(id, msg_json);
+            process_message(id, std::move(a.msg));
           }
         } else if(a.type == OUT_MESSAGE) {
           spdlog::trace("processing OUT_MESSAGE action");
@@ -360,10 +354,19 @@ namespace jwt_game_server {
           }
         } else if(a.type == CLOSE_CONNECTION) { 
           try {
+            m_server.send(a.hdl, a.msg, websocketpp::frame::opcode::text);
+          } catch (std::exception& e) {
+            spdlog::debug(
+                "error sending message \"{}\": {}",
+                a.msg,
+                e.what()
+              );
+          }
+          try {
             m_server.close(
                 a.hdl,
                 websocketpp::close::status::normal,
-                a.msg
+                close_reasons::session_complete()
               );
           } catch (std::exception& e) {
             spdlog::debug("error closing connection: {}", e.what());
@@ -397,7 +400,7 @@ namespace jwt_game_server {
         const json& data
       )
     {
-      lock_guard<mutex> guard(m_session_lock);
+      unique_lock<mutex> lock(m_session_lock);
       update_session_locks();
       if(!m_locked_sessions.contains(sid)) {
         spdlog::trace("completing session {}", sid);
@@ -407,22 +410,26 @@ namespace jwt_game_server {
 
         auto it = m_session_players.find(sid);
         if(it != m_session_players.end()) {
-          for(player_id pid : it->second) {
-            combined_id id{ pid, sid };
+          if(it->second.size() > 0) {
+            for(const player_id& pid : it->second) {
+              combined_id id{ pid, sid };
 
-            connection_hdl hdl;
-            if(get_connection_hdl_from_id(hdl, id)) {
-              send_to_hdl(
-                  hdl,
-                  m_get_result_str({ id.player, result_sid }, data)
-                );
-              close_hdl(hdl, close_reasons::session_complete());
-            } else {
-              spdlog::trace(
-                  "can't close player {} session {}: connection already closed",
-                  id.player,
-                  id.session
-                );
+              connection_hdl hdl;
+              if(get_connection_hdl_from_id(hdl, id)) {
+                send_to_hdl(
+                    hdl,
+                  );
+                close_hdl(
+                    hdl,
+                    m_get_result_str({ id.player, result_sid }, data)
+                  );
+              } else {
+                spdlog::trace(
+                    "can't close player {} session {}: connection already closed",
+                    id.player,
+                    id.session
+                  );
+              }
             }
           }
         }
@@ -453,12 +460,16 @@ namespace jwt_game_server {
         m_id_connections.erase(id);
       }
       {
-        lock_guard<mutex> session_guard(m_session_lock);
+        unique_lock<mutex> session_lock(m_session_lock);
         auto it = m_session_players.find(id.session);
         if(it != m_session_players.end()) {
           it->second.erase(id.player);
           if(it->second.empty()) {
             m_session_players.erase(it);
+            if(m_locked_sessions.count(id.sesson) > 0) {
+              session_lock.unlock();
+              m_handle_session_end(id.session);
+            }
           }
         }
       }
@@ -492,12 +503,11 @@ namespace jwt_game_server {
       m_action_cond.notify_one();
     }
 
-    void close_hdl(connection_hdl hdl, const std::string& reason) {
+    void close_hdl(connection_hdl hdl, const std::string& message) {
       {
         lock_guard<mutex> guard(m_action_lock);
-        spdlog::trace("close_connection: {}", reason);
-        m_actions.push(action(UNSUBSCRIBE, hdl));
-        m_actions.push(action(CLOSE_CONNECTION, hdl, reason));
+        spdlog::trace("close_hdl: {}", message);
+        m_actions.push(action(CLOSE_CONNECTION, hdl, message));
       }
       m_action_cond.notify_one();
     }
@@ -525,12 +535,6 @@ namespace jwt_game_server {
     }
 
     void on_close(connection_hdl hdl) {
-      {
-        lock_guard<mutex> guard(m_connection_lock);
-        if(m_connection_ids.count(hdl) == 0) {
-          return;
-        }
-      }
       {
         lock_guard<mutex> guard(m_action_lock);
         spdlog::trace("connection closed");
@@ -572,18 +576,27 @@ namespace jwt_game_server {
       try {
         jwt::decoded_jwt<json_traits> decoded_token =
           jwt::decode<json_traits>(login_token);
+        m_jwt_verifier.verify(decoded_token);
         auto claim_map = decoded_token.get_payload_claims();
         pid = player_traits::parse_player_id(claim_map.at("pid").to_json());
         sid = player_traits::parse_session_id(claim_map.at("sid").to_json());
         login_json = claim_map.at("data").to_json();
-        m_jwt_verifier.verify(decoded_token);
         completed = true;
       } catch(std::out_of_range& e) {
-        spdlog::debug("connection provided jwt without id and/or data claim: {}", e.what());
+        spdlog::debug(
+            "connection provided jwt without id and/or data claims: {}",
+            e.what()
+          );
       } catch(jwt::error::token_verification_exception& e) {
-        spdlog::debug("connection provided jwt that could not be verified: {}", e.what());
-      } catch(std::invalid_argument& e) { 
-        spdlog::debug("connection provided invalid jwt token string: {}", e.what());
+        spdlog::debug(
+            "connection provided jwt with invalid signature: {}",
+            e.what()
+          );
+      } catch(std::invalid_argument& e) {
+        spdlog::debug(
+            "connection provided invalid jwt token string: {}",
+            e.what()
+          );
       } catch(std::runtime_error& e) {
         spdlog::debug("connection provided invalid json in jwt: {}", e.what());
       } catch(std::exception& e) {
@@ -593,7 +606,7 @@ namespace jwt_game_server {
       combined_id id{pid, sid};
 
       if(completed) {
-        unique_lock<mutex> session_lock(m_session_lock);
+        lock_guard<mutex> session_guard(m_session_lock);
         update_session_locks();
 
         if(!m_locked_sessions.contains(id.session)) {
@@ -601,53 +614,51 @@ namespace jwt_game_server {
             lock_guard<mutex> connection_guard(m_connection_lock);
 
             // immediately close duplicate connections to avoid complications
-            {
-              auto id_connections_it = m_id_connections.find(id);
-              if(id_connections_it != m_id_connections.end()) {
-                spdlog::debug(
-                    "closing duplicate connection for player {} session {}",
-                    id.player,
-                    id.session
+            auto id_connections_it = m_id_connections.find(id);
+            if(id_connections_it != m_id_connections.end()) {
+              spdlog::debug(
+                  "closing duplicate connection for player {} session {}",
+                  id.player,
+                  id.session
+                );
+
+              try {
+                m_server.close(
+                    id_connections_it->second,
+                    websocketpp::close::status::normal,
+                    close_reasons::duplicate_connection()
                   );
-
-                try {
-                  m_server.close(
-                      id_connections_it->second,
-                      websocketpp::close::status::normal,
-                      close_reasons::duplicate_connection()
-                    );
-                } catch (std::exception& e) {
-                  spdlog::debug("error closing duplicate connection: {}",
-                    e.what());
-                }
-
-                m_connection_ids.erase(id_connections_it->second);
-                m_id_connections.erase(id_connections_it);
+              } catch (std::exception& e) {
+                spdlog::debug("error closing duplicate connection: {}",
+                  e.what());
               }
+
+              m_connection_ids.erase(id_connections_it->second);
+              m_id_connections.erase(id_connections_it);
             }
 
-            m_connection_ids.insert(std::make_pair(hdl, id));
-            m_id_connections.insert(std::make_pair(id, hdl));
+            m_connection_ids.emplace(hdl, id);
+            m_id_connections.emplace(id, hdl);
             m_new_connections.erase(hdl);
           }
 
           m_session_players[sid].insert(id.player);
-          session_lock.unlock();
-
           player_connect(id, login_json);
         } else {
-          send_to_hdl(
+          close_hdl(
               hdl,
               m_get_result_str(
                 { id.player, m_locked_sessions.at(id.session).session },
                 m_locked_sessions.at(id.session).data
               )
             );
-
-          close_hdl(hdl, close_reasons::session_complete());
         }
       } else {
-        close_hdl(hdl, close_reasons::invalid_jwt());
+        m_server.close(
+            id_connections_it->second,
+            websocketpp::close::status::normal,
+            close_reasons::invalid_jwt()
+          );
       }
     }
 

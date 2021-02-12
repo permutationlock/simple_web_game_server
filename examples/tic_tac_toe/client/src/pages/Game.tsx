@@ -131,28 +131,6 @@ class Game extends React.Component<GameProps, GameState> {
 
     return (
       <div className="Game">
-        <div className="Game-message">
-          {this.state.message}
-        </div>
-        <div className="Game-board-row">
-          {this.renderSquare(0)}
-          {this.renderSquare(1)}
-          {this.renderSquare(2)}
-        </div>
-        <div className="Game-board-row">
-          {this.renderSquare(3)}
-          {this.renderSquare(4)}
-          {this.renderSquare(5)}
-        </div>
-        <div className="Game-board-row">
-          {this.renderSquare(6)}
-          {this.renderSquare(7)}
-          {this.renderSquare(8)}
-        </div>
-        <div className="Game-timers">
-          <Timer name="You" time={this.state.time} />
-          <Timer name="Opponent" time={this.state.opponent_time} />
-        </div>
       </div>
     );
   }

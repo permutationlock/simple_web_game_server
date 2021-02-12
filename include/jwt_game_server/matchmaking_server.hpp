@@ -36,6 +36,16 @@ namespace jwt_game_server {
     using session_data = typename matchmaker::session_data;
     using clock = typename jwt_base_server::clock;
 
+    struct connection_update {
+      connection_update(const combined_id& i) : id(i), disconnection(true) {}
+      connection_update(const combined_id& i, const json& d) : id(i),
+        data(d), disconnection(true) {}
+
+      combined_id id;
+      json data;
+      bool disconnection;
+    };
+
   // main class body
   public:
     matchmaking_server(
@@ -92,9 +102,9 @@ namespace jwt_game_server {
       {
         lock_guard<mutex> guard(m_match_lock);
         m_session_data.clear();
-        m_altered_sessions.clear();
+        m_new_sessions.clear();
+        m_removed_sessions.clear();
       }
-      m_match_cond.notify_all();
     }
 
     std::size_t get_player_count() {
@@ -107,135 +117,140 @@ namespace jwt_game_server {
 
     void match_players(std::chrono::milliseconds timestep) {
       auto time_start = clock::now();
-      while(m_jwt_server.is_running()) {
-        unique_lock<mutex> lock(m_match_lock);
+      vector<session_id> finished_sessions;
 
-        while(!m_matchmaker.can_match(
-            m_session_data, m_altered_sessions
-          ))
-        {
-          m_match_cond.wait(lock);
-          if(!m_jwt_server.is_running()) {
-            return;
+      while(m_jwt_server.is_running()) {
+        unique_lock<mutex> match_lock(m_match_lock);
+
+        if(!m_matchmaker.can_match(m_session_data)) {
+          match_lock.unlock();
+          unique_lock<mutex> conn_lock(m_connection_update_list_lock);
+          while(m_connection_updates.empty()) {
+            m_match_condition.wait(conn_lock);
+            if(!m_jwt_server.is_running()) {
+              return;
+            }
           }
+          match_lock.lock();
         }
 
         auto delta_time =
           std::chrono::duration_cast<std::chrono::milliseconds>(
             clock::now() - time_start
           );
+        const long dt_count = delta_time.count();
 
-        if(delta_time >= timestep) {
-          vector<typename matchmaker::game> games;
-          m_matchmaker.match(
-              games, m_session_data, m_altered_sessions
-            );
-          m_altered_sessions.clear();
+        if(delta_time < timestep) {
+          match_lock.unlock();
+          std::this_thread::sleep_for(std::min(1ms, timestep-delta_time));
+        } else {
+          time_start = clock::now();
+          {
+            vector<session_id> new_finished_sessions
+              = process_connection_updates(new_finished_sessions);
 
-          for(const auto& g : games) {
-            for(const session_id& sid : g.session_list) {
+            // we remove data here to catch any possible players submitting
+            // connections in the last timestep when the session ends
+            for(const session_id& sid : finished_sessions) {
               m_session_data.erase(sid);
             }
+
+            std::swap(finished_sessions, new_finished_sessions);
           }
 
-          lock.unlock();
-
+          vector<typename matchmaker::game> games;
+          m_matchmaker.match(games, m_session_data, dt_count);
+ 
           for(const auto& g : games) {
             spdlog::trace("matched game: {}", g.data.dump());
             for(const session_id& sid : g.session_list) {
               m_jwt_server.complete_session(sid, g.session, g.data);
+              finished_sessions.push_back(sid);
             }
           }
-
-          time_start = clock::now();
-        } else {
-          lock.unlock();
         }
-
-        std::this_thread::sleep_for(std::min(1ms, timestep-delta_time));
       }
     }
 
   private:
+    vector<session_id> process_connections() {
+      vector<connection_update> connection_updates;
+      {
+        unique_lock<mutex> conn_lock(m_connection_update_list_lock);
+        std::swap(connection_updates, m_connection_updates);
+      }
+
+      vector<session_id> finished_sessions;
+      for(connection_update& update : connection_updates) {
+        auto it = m_session_data.find(update.id.session);
+        if(update.disconnection) {
+          if(it != m_session_data.end()) {
+            m_jwt_server.complete_session(
+                id.session, m_matchmaker.get_cancel_data(id.session)
+              );
+            m_session_data.erase(id.session);
+            finished_sessions.push_back(id.session);
+          }
+        } else {
+          if(it == m_session_data.end()) {
+            session_data data{update.data};
+
+            if(data.is_valid()) {
+              m_session_data.emplace(
+                  update.session_data, std::move(data)
+                );
+            } else {
+              m_jwt_server.complete_session(
+                  id.session, m_matchmaker.get_cancel_data(id.session)
+                );
+              finished_sessions.push_back(id.session);
+            }
+          }
+        }
+      }
+
+      return finished_sessions;
+    }
+
     // proper procedure for client to cancel matchmaking is to send a message
     // and wait for the server to close the connection; by acquiring the match
     // lock and marking the user as unavailable we avoid the situation where a
     // player disconnects after the match function is called, but before a game
     // token is successfully sent to them
-    void process_message(const combined_id& id, const json& data) {
-      unique_lock<mutex> lock(m_match_lock);
-      auto session_data_it = m_session_data.find(id.session);
-      if(session_data_it != m_session_data.end()) {
-        json cancel_msg = m_matchmaker.get_cancel_data(
-            id.session, session_data_it->second
-          );
-
-        m_altered_sessions.insert(id.session);
-        m_session_data.erase(session_data_it);
-
-        lock.unlock();
-
-        m_jwt_server.complete_session(
-            id.session,
-            id.session,
-            cancel_msg
-          );
+    void process_message(const combined_id& id, const std::string& data) {
+      {
+        lock_guard<mutex> guard(m_connection_update_list_lock);
+        m_connection_updates.emplace_back(id.session);
       }
+      m_match_condition.notify_one();
     }
 
     void player_connect(const combined_id& id, const json& data) {
-      session_data d{data};
-      if(!d.is_valid()) {
-        spdlog::debug("error with player json: {}", data.dump());
-        m_jwt_server.complete_session(
-            id.session,
-            id.session,
-            m_matchmaker.get_invalid_data()
-          );
-        return;
-      }
-
       {
-        lock_guard<mutex> guard(m_match_lock);
-        if(m_session_data.count(id.session) == 0) {
-          m_session_data.emplace(std::make_pair(id.session, d));
-          m_altered_sessions.insert(id.session);
-        }
+        lock_guard<mutex> guard(m_connection_update_list_lock);
+        m_connection_updates.emplace_back(id.session, data);
       }
-
-      m_match_cond.notify_one();
+      m_match_condition.notify_one();
     }
 
     void player_disconnect(const combined_id& id) {
-      unique_lock<mutex> lock(m_match_lock);
-      auto session_data_it = m_session_data.find(id.session);
-      if(session_data_it != m_session_data.end()) {
-        json cancel_msg = m_matchmaker.get_cancel_data(
-            id.session, session_data_it->second
-          );
-
-        m_altered_sessions.insert(id.session);
-        m_session_data.erase(session_data_it);
-
-        lock.unlock();
-
-        m_jwt_server.complete_session(
-            id.session,
-            id.session,
-            cancel_msg
-          );
+      {
+        lock_guard<mutex> guard(m_connection_update_list_lock);
+        m_connection_updates.emplace_back(id.session);
       }
+      m_match_condition.notify_one();
     }
 
     // member variables
     matchmaker m_matchmaker;
 
-    // m_match_lock guards the members m_session_map and m_altered_sessions
-    mutex m_match_lock;
-    condition_variable m_match_cond;
-
     unordered_map<session_id, session_data, id_hash> m_session_data;
-    unordered_set<session_id, id_hash> m_altered_sessions;
+    mutex m_match_lock;
+
+    std::vector<connection_update> m_connection_updates;
+    mutex m_connection_update_list_lock;
+
+    condition_variable m_match_condition;
 
     jwt_base_server m_jwt_server;
   };

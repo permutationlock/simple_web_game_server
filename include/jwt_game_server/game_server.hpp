@@ -101,6 +101,7 @@ namespace jwt_game_server {
       {
         lock_guard<mutex> guard(m_game_list_lock);
         m_games.clear();
+        m_out_messages.clear();
       }
       {
         lock_guard<mutex> guard(m_in_message_list_lock);
@@ -265,9 +266,9 @@ namespace jwt_game_server {
         );
     }
 
-    void process_message(const combined_id& id, const std::string& data) {
+    void process_message(const combined_id& id, std::string&& data) {
       lock_guard<mutex> msg_guard(m_in_message_list_lock);
-      m_in_messages[id.session].emplace_back(id.player, data);
+      m_in_messages[id.session].emplace_back(id.player, std::forward<json>(data));
     }
 
     void player_connect(const combined_id& id, const json& data) {

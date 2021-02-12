@@ -162,10 +162,10 @@ namespace jwt_game_server {
           vector<typename matchmaker::game> games;
           m_matchmaker.match(games, m_session_data, dt_count);
  
-          for(const auto& g : games) {
+          for(auto& g : games) {
             spdlog::trace("matched game: {}", g.data.dump());
-            for(const session_id& sid : g.session_list) {
-              m_jwt_server.complete_session(sid, g.session, g.data);
+            for(session_id& sid : g.session_list) {
+              m_jwt_server.complete_session(sid, g.session, std::move(g.data));
               finished_sessions.push_back(sid);
             }
           }
@@ -228,7 +228,7 @@ namespace jwt_game_server {
     // lock and marking the user as unavailable we avoid the situation where a
     // player disconnects after the match function is called, but before a game
     // token is successfully sent to them
-    void process_message(const combined_id& id, const std::string& data) {
+    void process_message(const combined_id& id, std::string&& data) {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
         m_connection_updates.emplace_back(id.session);

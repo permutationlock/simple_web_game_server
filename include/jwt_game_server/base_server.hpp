@@ -108,7 +108,7 @@ namespace jwt_game_server {
     };
 
     struct session_data {
-      session_data(const session_id& s, const json& d) : session(s), data(d) {}
+      session_data(const session_id& s, json&& d) : session(s), data(d) {}
       session_id session;
       json data;
     };
@@ -334,9 +334,10 @@ namespace jwt_game_server {
             conn_lock.unlock();
 
             spdlog::trace(
-                "processing message from player {} with session {}",
+                "player {} with session {} sent: {}",
                 id.player,
-                id.session
+                id.session,
+                a.msg
               );
 
             process_message(id, std::move(a.msg));
@@ -398,16 +399,14 @@ namespace jwt_game_server {
     void complete_session(
         const session_id& sid,
         const session_id& result_sid,
-        const json& data
+        json&& result_data
       )
     {
       unique_lock<mutex> lock(m_session_lock);
       update_session_locks();
       if(!m_locked_sessions.contains(sid)) {
         spdlog::trace("completing session {}", sid);
-        m_locked_sessions.insert(
-            std::make_pair(sid, session_data{ result_sid, data })
-          );
+        session_data result{result_sid, std::forward<json>(result_data)};
 
         auto it = m_session_players.find(sid);
         if(it != m_session_players.end()) {
@@ -419,7 +418,10 @@ namespace jwt_game_server {
               if(get_connection_hdl_from_id(hdl, id)) {
                 close_hdl(
                     hdl,
-                    m_get_result_str({ id.player, result_sid }, data)
+                    m_get_result_str(
+                      { id.player, result.session },
+                      result.data
+                    )
                   );
               } else {
                 spdlog::trace(
@@ -431,14 +433,16 @@ namespace jwt_game_server {
             }
           }
         }
+
+        m_locked_sessions.insert(
+            std::make_pair(sid, std::move(result))
+          );
       }
     }
 
   private:
-    void process_message(const combined_id& id, const json& data) {
-      spdlog::debug("player {} with session {} sent: {}",
-          id.player, id.session, data.dump());
-      m_handle_message(id, data);
+    void process_message(const combined_id& id, std::string&& data) {
+      m_handle_message(id, std::forward<json>(data));
     }
 
     void player_connect(const combined_id& id, const json& data) {

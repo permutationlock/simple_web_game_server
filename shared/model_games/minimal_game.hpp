@@ -78,7 +78,8 @@ public:
   {
     for(const message& msg : in_msg_list) {
       for(player_id pid : m_player_list) {
-        out_msg_list.emplace_back(pid, msg.second);
+        json temp = { { "pid", msg.first }, { "message", msg.second } };
+        out_msg_list.emplace_back(pid, temp.dump());
       }
     }
   }
@@ -104,7 +105,7 @@ class minimal_matchmaker {
 public:
   using player_traits = minimal_player_traits;
   using session_id = player_traits::id::session_id;
-  using hash_id = player_traits::id::hash;
+  using id_hash = player_traits::id::hash;
 
   struct session_data {
     session_data(const json& data) {}
@@ -129,7 +130,7 @@ public:
   minimal_matchmaker() : m_sid_count(0) {}
 
   bool can_match(
-      const unordered_map<session_id, session_data, hash_id>& session_map
+      const unordered_map<session_id, session_data, id_hash>& session_map
     )
   {
     return session_map.size() > 1;
@@ -137,7 +138,8 @@ public:
 
   void match(
       vector<game>& game_list,
-      const unordered_map<session_id, session_data, hash_id>& session_map
+      const unordered_map<session_id, session_data, id_hash>& session_map,
+      long delta_time
     )
   {
     vector<session_id> sl;
@@ -150,10 +152,7 @@ public:
     }
   }
 
-  json get_cancel_data(
-      const session_id& sid
-    ) const
-  {
+  json get_cancel_data() const {
     json temp;
     temp["matched"] = false;
     return temp; 

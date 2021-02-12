@@ -353,6 +353,7 @@ namespace jwt_game_server {
               );
           }
         } else if(a.type == CLOSE_CONNECTION) { 
+          spdlog::trace("processing CLOSE_CONNECTION action");
           try {
             m_server.send(a.hdl, a.msg, websocketpp::frame::opcode::text);
           } catch (std::exception& e) {
@@ -416,9 +417,6 @@ namespace jwt_game_server {
 
               connection_hdl hdl;
               if(get_connection_hdl_from_id(hdl, id)) {
-                send_to_hdl(
-                    hdl,
-                  );
                 close_hdl(
                     hdl,
                     m_get_result_str({ id.player, result_sid }, data)
@@ -460,16 +458,12 @@ namespace jwt_game_server {
         m_id_connections.erase(id);
       }
       {
-        unique_lock<mutex> session_lock(m_session_lock);
+        lock_guard<mutex> session_guard(m_session_lock);
         auto it = m_session_players.find(id.session);
         if(it != m_session_players.end()) {
           it->second.erase(id.player);
           if(it->second.empty()) {
             m_session_players.erase(it);
-            if(m_locked_sessions.count(id.sesson) > 0) {
-              session_lock.unlock();
-              m_handle_session_end(id.session);
-            }
           }
         }
       }
@@ -655,7 +649,7 @@ namespace jwt_game_server {
         }
       } else {
         m_server.close(
-            id_connections_it->second,
+            hdl,
             websocketpp::close::status::normal,
             close_reasons::invalid_jwt()
           );

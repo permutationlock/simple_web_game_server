@@ -1,5 +1,5 @@
 CXX      = g++
-CXXFLAGS = -O0 -Wall -std=c++17 -pthread -lssl -lcrypto -ltbb
+CXXFLAGS = -O3 -Wall -std=c++17 -pthread -lssl -lcrypto -ltbb
 INCLUDES = -I../../../include -I../../../shared
 
 TARGET = game_server

@@ -1,5 +1,5 @@
 CXX      = g++
-CXXFLAGS = -O0 -Wall -std=c++17 -pthread -lboost_log -lssl -lcrypto
+CXXFLAGS = -O3 -Wall -std=c++17 -pthread -lboost_log -lssl -lcrypto
 INCLUDES = -I../../../include -I../../../shared
 
 TARGET = matchmaking_server

@@ -55,7 +55,7 @@ int main() {
 
   std::thread msg_process_thr{bind(&ttt_server::process_messages, &mms)};
 
-  std::thread match_thr{bind(&ttt_server::match_players, &mms, 5s)};
+  std::thread match_thr{bind(&ttt_server::match_players, &mms, 10ms)};
 
   mms_server_thr.join();
   msg_process_thr.join();

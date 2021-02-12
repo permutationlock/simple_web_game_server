@@ -37,7 +37,7 @@ namespace jwt_game_server {
     struct connection_update {
       connection_update(const combined_id& i) : id(i), disconnection(true) {}
       connection_update(const combined_id& i, const json& d) : id(i),
-        data(d), disconnection(true) {}
+        data(d), disconnection(false) {}
 
       combined_id id;
       json data;
@@ -122,18 +122,13 @@ namespace jwt_game_server {
 
     void update_games(std::chrono::milliseconds timestep) {
       auto time_start = clock::now();
+      vector<session_id> finished_games;
+
       while(m_jwt_server.is_running()) {
         const auto delta_time =
           std::chrono::duration_cast<std::chrono::milliseconds>(
             clock::now() - time_start
           );
-        const long dt_count = delta_time.count();
-
-        unordered_map<
-            session_id,
-            vector<message>,
-            id_hash
-          > out_messages;
 
         unique_lock<mutex> game_lock(m_game_list_lock);
         if(m_games.empty()) {
@@ -158,14 +153,17 @@ namespace jwt_game_server {
           // we remove game data here to catch any possible players submitting
           // new connections in the last timestep when the game session ends
           for(session_id sid : finished_games) {
-              out_messages.erase(sid);
-              m_games.erase(sid);
+            spdlog::trace("erasing game session {}", sid);
+            m_out_messages.erase(sid);
+            m_games.erase(sid);
           }
           finished_games.clear();
 
-          process_game_updates(out_messages);
+          process_game_updates(delta_time.count());
 
-          for(auto it = out_messages.begin(); it != out_messages.end(); ++it) {
+          for(auto it = m_out_messages.begin(); it != m_out_messages.end();
+              ++it)
+          {
             for(const message& msg : it->second) {
               m_jwt_server.send_message(
                   { msg.first, it->first },
@@ -196,7 +194,7 @@ namespace jwt_game_server {
     }
 
   private:
-    void process_connections() {
+    void process_connection_updates() {
       vector<connection_update> connection_updates;
       {
         lock_guard<mutex> conn_guard(m_connection_update_list_lock);
@@ -220,10 +218,12 @@ namespace jwt_game_server {
                 );
               continue;
             }
+
+            spdlog::error("creating game session {}", update.id.session);
             it = m_games.emplace(
                 update.id.session, std::move(game)
               ).first;
-            out_messages.emplace(
+            m_out_messages.emplace(
                 update.id.session, vector<message>{}
               );
           }
@@ -233,10 +233,7 @@ namespace jwt_game_server {
       }
     }
 
-    void process_game_updates(
-        unordered_map<session_id, vector<message>, id_hash>& out_messages
-      )
-    {
+    void process_game_updates(long delta_time) {
       unordered_map<session_id, vector<message>, id_hash> in_messages;
       in_messages.reserve(m_games.size());
       {
@@ -253,15 +250,15 @@ namespace jwt_game_server {
             auto in_msg_it = in_messages.find(key_val_pair.first);
             if(in_msg_it != in_messages.end()) {
               key_val_pair.second.update(
-                  out_messages.at(key_val_pair.first),
-                  it->second,
-                  dt_count
+                  m_out_messages.at(key_val_pair.first),
+                  in_msg_it->second,
+                  delta_time
                 );
             } else {
               key_val_pair.second.update(
-                  out_messages.at(key_val_pair.first),
+                  m_out_messages.at(key_val_pair.first),
                   vector<message>{},
-                  dt_count
+                  delta_time
                 );
             }
           }
@@ -305,6 +302,8 @@ namespace jwt_game_server {
     mutex m_connection_update_list_lock;
 
     condition_variable m_game_condition;
+
+    unordered_map<session_id, vector<message>, id_hash> m_out_messages;
 
     jwt_base_server m_jwt_server;
   };

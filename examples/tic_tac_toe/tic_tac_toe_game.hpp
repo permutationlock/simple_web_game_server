@@ -175,7 +175,7 @@ public:
 
   tic_tac_toe_game(const json& msg) : m_valid(true), m_started(false),
     m_game_over(false), m_xmove(true), m_state(0), m_xtime(100000),
-    m_otime(100000)
+    m_otime(100000), m_elapsed_time(0)
   {
     bool is_matched = false;
     try {
@@ -189,7 +189,7 @@ public:
     }
   }
   
-  void connect(player_id id) {
+  void connect(vector<message>& out_messages, player_id id) {
     spdlog::trace("tic tac toe connect player {}", id);
 
     if(m_data_map.count(id) == 0) {
@@ -198,10 +198,8 @@ public:
 
     m_data_map[id].is_connected = true;
 
-    if(!m_data_map[id].has_connected) { 
-      if(m_valid && (m_player_list.size() > 1)) {
-        start();
-      }
+    if(m_started) {
+      out_messages.emplace_back(id, get_game_state(id).dump());
     }
   }
 
@@ -215,7 +213,6 @@ public:
       long delta_time
     )
   {
-    spdlog::trace("processing update with timestep: {}", delta_time);
     if(m_started && !m_game_over) {
       if(m_xmove) {
         m_xtime -= delta_time;
@@ -233,13 +230,21 @@ public:
         m_game_over = true;
       }
 
-      for(player_id player : m_player_list) {
-        out_messages.emplace_back(player, get_time_state(player).dump());
+      m_elapsed_time += delta_time;
+      if(m_elapsed_time >= 500) {
+        for(player_id player : m_player_list) {
+          if(m_data_map[player].is_connected) {
+            out_messages.emplace_back(player, get_time_state(player).dump());
+          }
+        }
+        m_elapsed_time = 0;
       }
 
       if(is_done()) {
         for(player_id player : m_player_list) {
-          out_messages.emplace_back(player, get_game_state(player).dump());
+          if(m_data_map[player].is_connected) {
+            out_messages.emplace_back(player, get_game_state(player).dump());
+          }
         }
       }
 
@@ -251,6 +256,16 @@ public:
             );
         } else {
           player_update(out_messages, msg.first, msg_json);
+        }
+      }
+    } else {
+      if(m_valid && (m_player_list.size() > 1)) {
+        m_started = true;
+
+        for(player_id player : m_player_list) {
+          if(m_data_map[player].is_connected) {
+            out_messages.emplace_back(player, get_time_state(player).dump());
+          }
         }
       }
     }
@@ -295,7 +310,9 @@ private:
               m_xmove = false;
               m_move_list.push_back(data["move"]);
               for(player_id player : m_player_list) {
-                msg_list.emplace_back(player, get_game_state(player).dump());
+                if(m_data_map[player].is_connected) {
+                  msg_list.emplace_back(player, get_game_state(player).dump());
+                }
               }
             } else {
               spdlog::debug(
@@ -313,7 +330,9 @@ private:
               m_xmove = true;
               m_move_list.push_back(data["move"]);
               for(player_id player : m_player_list) {
-                msg_list.emplace_back(player, get_game_state(player).dump());
+                if(m_data_map[player].is_connected) {
+                  msg_list.emplace_back(player, get_game_state(player).dump());
+                }
               }
             } else {
               spdlog::debug(
@@ -338,15 +357,17 @@ private:
     }
   }
 
-  void start() {
-     m_started = true;
-  }
-
   json get_game_state(player_id id) const {
     bool isx = (id == m_player_list.front());
 
-    json game_json = get_state();
+    json game_json;
     game_json["type"] = "game";
+    game_json["board"] = m_board.get_board();
+    game_json["time"] = (isx ? m_xtime : m_otime);
+    game_json["opponent_time"] = (isx ? m_otime : m_xtime); 
+    game_json["xmove"] = m_xmove;
+    game_json["state"] = m_board.get_state() + m_state;
+    game_json["done"] = is_done();
     game_json["your_turn"] = isx ? m_xmove : !m_xmove;
  
     return game_json;
@@ -358,8 +379,8 @@ private:
     json game_json;
 
     game_json["type"] = "time";
-    game_json["your_time"] = (isx ? m_xtime : m_otime);
-    game_json["opp_time"] = (isx ? m_otime : m_xtime); 
+    game_json["time"] = (isx ? m_xtime : m_otime);
+    game_json["opponent_time"] = (isx ? m_otime : m_xtime); 
     return game_json;
   }
 
@@ -379,6 +400,7 @@ private:
   int m_state;
   long m_xtime;
   long m_otime;
+  long m_elapsed_time;
 
   vector<json> m_move_list;
 

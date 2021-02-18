@@ -34,13 +34,15 @@ class Match extends React.Component<MatchProps, MatchState> {
     };
     
     ws.onmessage = (e) => {
-      this.setState({ matching: false, matched: true});
-      this.props.history.push("/game/" + e.data);
+      if(this.state.matching) {
+        this.setState({ matching: false, matched: true});
+        this.props.history.push("/game/" + e.data);
+      }
     };
 
     ws.onclose = () => {
       if(!this.state.matched) {
-        this.setState({ matching: false });
+        this.setState({ socket: null, matching: false });
         this.props.history.push("/");
       }
     };
@@ -48,6 +50,7 @@ class Match extends React.Component<MatchProps, MatchState> {
 
   stopMatchmaking() {
     if(this.state.socket != null) {
+      this.setState({ matching: false });
       this.state.socket.send("stop");
     }
   }

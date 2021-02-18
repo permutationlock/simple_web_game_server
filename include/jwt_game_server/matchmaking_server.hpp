@@ -39,7 +39,7 @@ namespace jwt_game_server {
     struct connection_update {
       connection_update(const session_id& i) : session(i),
         disconnection(true) {}
-      connection_update(const session_id& i, const json& d) : session(i),
+      connection_update(const session_id& i, json&& d) : session(i),
         data(d), disconnection(false) {}
 
       session_id session;
@@ -236,10 +236,12 @@ namespace jwt_game_server {
       m_match_condition.notify_one();
     }
 
-    void player_connect(const combined_id& id, const json& data) {
+    void player_connect(const combined_id& id, json&& data) {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
-        m_connection_updates.emplace_back(id.session, data);
+        m_connection_updates.emplace_back(
+            id.session, std::forward<json>(data)
+          );
       }
       m_match_condition.notify_one();
     }

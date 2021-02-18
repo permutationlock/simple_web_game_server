@@ -33,12 +33,16 @@ int main() {
 
   // create a function to sign game result tokens
   auto sign_game = [](const combined_id& id, const json& data){ 
-      return jwt::create<nlohmann_traits>()
+      std::string token = jwt::create<nlohmann_traits>()
         .set_issuer("tic_tac_toe_game_server")
         .set_payload_claim("pid", claim(id.player))
         .set_payload_claim("sid", claim(id.session))
         .set_payload_claim("data", claim(data))
         .sign(jwt::algorithm::hs256{"secret"});
+      json temp;
+      temp["type"] = "result";
+      temp["token"] = token;
+      return temp.dump();
     };
 
   // create our main server to manage player connection and matchmaking

@@ -36,7 +36,7 @@ namespace jwt_game_server {
 
     struct connection_update {
       connection_update(const combined_id& i) : id(i), disconnection(true) {}
-      connection_update(const combined_id& i, const json& d) : id(i),
+      connection_update(const combined_id& i, json&& d) : id(i),
         data(d), disconnection(false) {}
 
       combined_id id;
@@ -140,6 +140,7 @@ namespace jwt_game_server {
             if(!m_jwt_server.is_running()) {
               return;
             }
+            time_start = clock::now();
           }
           game_lock.lock();
         }
@@ -165,10 +166,10 @@ namespace jwt_game_server {
           for(auto it = m_out_messages.begin(); it != m_out_messages.end();
               ++it)
           {
-            for(const message& msg : it->second) {
+            for(message& msg : it->second) {
               m_jwt_server.send_message(
                   { msg.first, it->first },
-                  msg.second
+                  std::move(msg.second)
                 );
             }
             it->second.clear();
@@ -203,13 +204,14 @@ namespace jwt_game_server {
       }
 
       for(connection_update& update : connection_updates) {
-        auto it = m_games.find(update.id.session);
+        auto games_it = m_games.find(update.id.session);
         if(update.disconnection) {
-          if(it != m_games.end()) {
-            it->second.disconnect(update.id.player);
+          if(games_it != m_games.end()) {
+            games_it->second.disconnect(update.id.player);
           }
         } else {
-          if(it == m_games.end()) {
+          auto out_messages_it = m_out_messages.find(update.id.session);
+          if(games_it == m_games.end()) {
             game_instance game{update.data};
 
             if(!game.is_valid()) {
@@ -220,16 +222,16 @@ namespace jwt_game_server {
               continue;
             }
 
-            spdlog::error("creating game session {}", update.id.session);
-            it = m_games.emplace(
+            spdlog::debug("creating game session {}", update.id.session);
+            games_it = m_games.emplace(
                 update.id.session, std::move(game)
               ).first;
-            m_out_messages.emplace(
+            out_messages_it = m_out_messages.emplace(
                 update.id.session, vector<message>{}
-              );
+              ).first;
           }
      
-          it->second.connect(update.id.player);
+          games_it->second.connect(out_messages_it->second, update.id.player);
         }
       }
     }
@@ -269,14 +271,16 @@ namespace jwt_game_server {
     void process_message(const combined_id& id, std::string&& data) {
       lock_guard<mutex> msg_guard(m_in_message_list_lock);
       m_in_messages[id.session].emplace_back(
-          id.player, std::forward<std::string>(data)
+          id.player, std::move(data)
         );
     }
 
-    void player_connect(const combined_id& id, const json& data) {
+    void player_connect(const combined_id& id, json&& data) {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
-        m_connection_updates.emplace_back(id, data);
+        m_connection_updates.emplace_back(
+            id, std::move(data)
+          );
       }
       m_game_condition.notify_one();
     }

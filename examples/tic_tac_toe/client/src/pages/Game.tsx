@@ -1,39 +1,19 @@
 import React from 'react';
 import './Game.css';
+import { TicTacToe, GameData, parseUpdate } from '../components/TicTacToe';
+import { RouteComponentProps } from 'react-router-dom';
 
-type SquareProps = { value: number, onClick: (MouseEvent) => void };
-
-function Square(props: SquareProps) {
-  let charFromValue = function(v: number) : string {
-    if(v > 0) { return "X"; }
-    else if(v < 0) { return "O"; }
-    else { return " " }
-  };
-
-  return (
-    <button className="Game-square" onClick={props.onClick}>
-      {charFromValue(props.value)}
-    </button>
-  );
-}
-
-type TimerProps = { name: string, time: number };
-
-function Timer(props: TimeProps) {
-  return (
-    <div className="Game-timer">
-      {this.props.name}: {this.props.time}
-    </div>
-  );
-}
+var closeReasons = new Set([
+    "INVALID_TOKEN",
+    "DUPLICATE_CONNECTION",
+    "SERVER_SHUTDOWN",
+    "SESSION_COMPLETE"
+  ]);
 
 type GameState = {
   socket: WebSocket | null,
   done: boolean,
-  board: Array<number>,
-  time: number,
-  opponent_time: number,
-  status: number
+  gameData: GameData
 };
 
 type GameParams = { token: string };
@@ -45,30 +25,22 @@ class Game extends React.Component<GameProps, GameState> {
 
     this.state = {
       socket: null,
-      connected: false,
       done: false,
-      board: [ 0, 0, 0,
-               0, 0, 0,
-               0, 0, 0 ],
-      time: 0.00,
-      opponent_time: 0.00,
-      status: 0
+      gameData: new GameData()
     };
 
-    this.close_reasons = {
-      "INVALID_TOKEN",
-      "DUPLICATE_CONNECTION",
-      "SERVER_SHUTDOWN",
-      "SESSION_COMPLETE"
-    };
+    this.connect = this.connect.bind(this);
+    this.move = this.move.bind(this);
+    this.finish = this.finish.bind(this);
+    this.localUpdate = this.localUpdate.bind(this);
   }
 
   componentDidMount() {
-    connect();
+    this.connect();
   }
 
   connect() {
-    if(this.state.connected == false && this.state.done == false) {
+    if(this.state.socket === null && this.state.done === false) {
       const { token } = this.props.match.params;
 
       var ws_uri = "ws://localhost:9090";
@@ -81,7 +53,6 @@ class Game extends React.Component<GameProps, GameState> {
         console.log("connected to " + ws_uri);
         this.setState({
             socket: ws,
-            connected: true,
             done: false
           });
         this.state.socket!.send(token);
@@ -89,48 +60,52 @@ class Game extends React.Component<GameProps, GameState> {
 
       ws.onmessage = (e) => {
         console.log("received ws message: " + e.data);
-        this.setState({ matching: false, matched: true});
-        this.props.history.push("/game/" + e.data);
+        this.setState({ gameData: parseUpdate(this.state.gameData, e.data) });
       };
 
       ws.onclose = (e) => {
         console.log("disconnected from " + ws_uri +": " + e.reason);
-        this.setState({ socket: null, connected: false });
+        this.setState({ socket: null });
 
-        if(e.reason in this.close_reasons) {
+        if(closeReasons.has(e.reason)) {
           // disconnect for valid reason, session over
           this.setState({
               done: true
             });
+          console.log("closed for reason: " + e.reason);
         } else {
           // disconnected for unknown reason, attempt to reconnect
-          this.connect();
+          setTimeout(this.connect, 1000);
+          console.log("closed for unknown reason");
         }
       };
-
-      // attempt to reconnect in 1 second to verify connection
-      setTimeout(this.connect, 1000);
     }
   }
 
-  stopMatchmaking() {
-    if(this.state.connected == true) {
-      this.state.socket.send("stop");
+  move(newGameData: GameData, updateText : string): void {
+    if(this.state.socket != null) {
+      this.setState({ gameData: newGameData });
+      this.state.socket.send(updateText);
     }
+  }
+
+  localUpdate(newGameData: GameData): void {
+    this.setState({ gameData: newGameData });
+  }
+
+  finish(): void {
+    this.setState({ done: true });
   }
 
   render() {
-    let renderSquare = function(i: number) {
-      return (
-        <Square
-          value={this.state.board[i]}
-          onClick={() => this.props.onClick(i)}
-        />
-      );
-    };
-
     return (
       <div className="Game">
+        <TicTacToe
+          gameData={this.state.gameData}
+          move={this.move}
+          finish={this.finish}
+          connected={this.state.socket != null}
+        />
       </div>
     );
   }

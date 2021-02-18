@@ -99,6 +99,8 @@ namespace jwt_game_server {
 
     struct action {
       action(action_type t, connection_hdl h) : type(t), hdl(h) {}
+      action(action_type t, connection_hdl h, std::string&& m)
+        : type(t), hdl(h), msg(m) {}
       action(action_type t, connection_hdl h, const std::string& m)
         : type(t), hdl(h), msg(m) {}
 
@@ -165,9 +167,9 @@ namespace jwt_game_server {
         std::chrono::milliseconds t
       ) : m_is_running(false), m_jwt_verifier(v), m_get_result_str(f),
           m_session_release_time(t),
-          m_handle_open([](const combined_id&, const json&){}),
+          m_handle_open([](const combined_id&, json&&){}),
           m_handle_close([](const combined_id&){}),
-          m_handle_message([](const combined_id&, const json&){})
+          m_handle_message([](const combined_id&, std::string&&){})
     {
       m_server.init_asio();
 
@@ -181,7 +183,7 @@ namespace jwt_game_server {
         );
     }
 
-    void set_open_handler(function<void(const combined_id&,const json&)> f) {
+    void set_open_handler(function<void(const combined_id&,json&&)> f) {
       if(!m_is_running) {
         m_handle_open = f;
       } else {
@@ -197,7 +199,7 @@ namespace jwt_game_server {
       }
     }
 
-    void set_message_handler(function<void(const combined_id&,const json&)> f) {
+    void set_message_handler(function<void(const combined_id&,std::string&&)> f) {
       if(!m_is_running) {
         m_handle_message = f;
       } else {
@@ -263,15 +265,7 @@ namespace jwt_game_server {
 
           // close all remaining open connections
           for(connection_hdl hdl : m_new_connections) {
-            try {
-              m_server.close(
-                  hdl,
-                  websocketpp::close::status::normal,
-                  close_reasons::server_shutdown()
-                );
-            } catch (std::exception& e) {
-              spdlog::debug("error closing connection: {}", e.what());
-            }
+            close_hdl(hdl, close_reasons::server_shutdown());
           }
 
           m_connection_ids.clear();
@@ -340,39 +334,15 @@ namespace jwt_game_server {
                 a.msg
               );
 
-            process_message(id, std::move(a.msg));
+            m_handle_message(id, std::move(a.msg));
           }
         } else if(a.type == OUT_MESSAGE) {
           spdlog::trace("processing OUT_MESSAGE action");
-          try {
-            m_server.send(a.hdl, a.msg, websocketpp::frame::opcode::text);
-          } catch (std::exception& e) {
-            spdlog::debug(
-                "error sending message \"{}\": {}",
-                a.msg,
-                e.what()
-              );
-          }
+          send_to_hdl(a.hdl, a.msg);
         } else if(a.type == CLOSE_CONNECTION) { 
           spdlog::trace("processing CLOSE_CONNECTION action");
-          try {
-            m_server.send(a.hdl, a.msg, websocketpp::frame::opcode::text);
-          } catch (std::exception& e) {
-            spdlog::debug(
-                "error sending message \"{}\": {}",
-                a.msg,
-                e.what()
-              );
-          }
-          try {
-            m_server.close(
-                a.hdl,
-                websocketpp::close::status::normal,
-                close_reasons::session_complete()
-              );
-          } catch (std::exception& e) {
-            spdlog::debug("error closing connection: {}", e.what());
-          }
+          send_to_hdl(a.hdl, a.msg);
+          close_hdl(a.hdl, close_reasons::session_complete());
         } else {
           // undefined.
         }
@@ -384,10 +354,17 @@ namespace jwt_game_server {
       return m_connection_ids.size();
     }
 
-    void send_message(const combined_id& id, const std::string& msg) {
+    void send_message(const combined_id& id, std::string&& msg) {
       connection_hdl hdl;
       if(get_connection_hdl_from_id(hdl, id)) {
-        send_to_hdl(hdl, msg);
+        {
+          lock_guard<mutex> guard(m_action_lock);
+          spdlog::trace("out_message: {}", msg);
+          m_actions.push(
+              action{OUT_MESSAGE, hdl, std::move(msg)}
+            );
+        }
+        m_action_cond.notify_one();
       } else {
         spdlog::trace(
             "ignored message sent to player {} with session {}: connection closed",
@@ -406,7 +383,7 @@ namespace jwt_game_server {
       update_session_locks();
       if(!m_locked_sessions.contains(sid)) {
         spdlog::trace("completing session {}", sid);
-        session_data result{result_sid, std::forward<json>(result_data)};
+        session_data result{result_sid, std::move(result_data)};
 
         auto it = m_session_players.find(sid);
         if(it != m_session_players.end()) {
@@ -416,13 +393,19 @@ namespace jwt_game_server {
 
               connection_hdl hdl;
               if(get_connection_hdl_from_id(hdl, id)) {
-                close_hdl(
-                    hdl,
-                    m_get_result_str(
-                      { id.player, result.session },
-                      result.data
-                    )
-                  );
+                {
+                  lock_guard<mutex> guard(m_action_lock);
+                  spdlog::trace("closing session {} player {}", sid, pid);
+                  m_actions.push(action(
+                        CLOSE_CONNECTION,
+                        hdl,
+                        m_get_result_str(
+                          { id.player, result.session },
+                          result.data
+                        )
+                      ));
+                }
+                m_action_cond.notify_one();
               } else {
                 spdlog::trace(
                     "can't close player {} session {}: connection already closed",
@@ -441,20 +424,6 @@ namespace jwt_game_server {
     }
 
   private:
-    void process_message(const combined_id& id, std::string&& data) {
-      m_handle_message(id, std::forward<std::string>(data));
-    }
-
-    void player_connect(const combined_id& id, const json& data) {
-      spdlog::debug(
-          "player {} connected with session {}: {}",
-          id.player,
-          id.session,
-          data.dump()
-        );
-      m_handle_open(id, data);
-    }
-
     void player_disconnect(connection_hdl hdl, const combined_id& id) {
       {
         lock_guard<mutex> connection_guard(m_connection_lock);
@@ -493,21 +462,28 @@ namespace jwt_game_server {
     }
 
     void send_to_hdl(connection_hdl hdl, const std::string& msg) {
-      {
-        lock_guard<mutex> guard(m_action_lock);
-        spdlog::trace("out_message: {}", msg);
-        m_actions.push(action(OUT_MESSAGE, hdl, msg));
+      try {
+        m_server.send(hdl, msg, websocketpp::frame::opcode::text);
+      } catch (std::exception& e) {
+        spdlog::debug(
+            "error sending message \"{}\": {}",
+            msg,
+            e.what()
+          );
       }
-      m_action_cond.notify_one();
     }
 
-    void close_hdl(connection_hdl hdl, const std::string& message) {
-      {
-        lock_guard<mutex> guard(m_action_lock);
-        spdlog::trace("close_hdl: {}", message);
-        m_actions.push(action(CLOSE_CONNECTION, hdl, message));
+    void close_hdl(connection_hdl hdl, const std::string& reason) {
+      try {
+        m_server.close(
+            hdl,
+            websocketpp::close::status::normal,
+            reason
+          );
+      } catch (std::exception& e) {
+        spdlog::debug("error closing connection: {}",
+            e.what());
       }
-      m_action_cond.notify_one();
     }
 
     void on_open(connection_hdl hdl) {
@@ -517,16 +493,7 @@ namespace jwt_game_server {
           spdlog::trace("connection opened");
           m_actions.push(action(SUBSCRIBE,hdl));
         } else {
-          try {
-            m_server.close(
-                hdl,
-                websocketpp::close::status::normal,
-                close_reasons::server_shutdown()
-              );
-          } catch (std::exception& e) {
-            spdlog::debug("error closing connection: {}",
-                e.what());
-          }
+          close_hdl(hdl, close_reasons::server_shutdown());
         }
       }
       m_action_cond.notify_one();
@@ -545,7 +512,7 @@ namespace jwt_game_server {
       {
         lock_guard<mutex> guard(m_action_lock);
         spdlog::trace("in message: {}", msg->get_payload());
-        m_actions.push(action(IN_MESSAGE, hdl, msg->get_payload()));
+        m_actions.push(action(IN_MESSAGE, hdl, std::move(msg->get_raw_payload())));
       }
       m_action_cond.notify_one();
     }
@@ -564,6 +531,29 @@ namespace jwt_game_server {
         m_locked_sessions.clear();
         m_last_session_update_time = clock::now();
       }
+    }
+
+    void setup_connection_id(connection_hdl hdl, const combined_id& id) {
+      lock_guard<mutex> connection_guard(m_connection_lock);
+
+      // immediately close duplicate connections to avoid complications
+      auto id_connections_it = m_id_connections.find(id);
+      if(id_connections_it != m_id_connections.end()) {
+        spdlog::debug(
+            "closing duplicate connection for player {} session {}",
+            id.player,
+            id.session
+          );
+
+        close_hdl(hdl, close_reasons::duplicate_connection());
+
+        m_connection_ids.erase(id_connections_it->second);
+        m_id_connections.erase(id_connections_it);
+      }
+
+      m_connection_ids.emplace(hdl, id);
+      m_id_connections.emplace(id, hdl);
+      m_new_connections.erase(hdl);
     }
 
     void open_session(connection_hdl hdl, const std::string& login_token) {
@@ -597,8 +587,6 @@ namespace jwt_game_server {
           );
       } catch(std::runtime_error& e) {
         spdlog::debug("connection provided invalid json in jwt: {}", e.what());
-      } catch(std::exception& e) {
-        spdlog::debug("error verifying player: {}", e.what());
       }
 
       combined_id id{pid, sid};
@@ -608,55 +596,27 @@ namespace jwt_game_server {
         update_session_locks();
 
         if(!m_locked_sessions.contains(id.session)) {
-          {
-            lock_guard<mutex> connection_guard(m_connection_lock);
-
-            // immediately close duplicate connections to avoid complications
-            auto id_connections_it = m_id_connections.find(id);
-            if(id_connections_it != m_id_connections.end()) {
-              spdlog::debug(
-                  "closing duplicate connection for player {} session {}",
-                  id.player,
-                  id.session
-                );
-
-              try {
-                m_server.close(
-                    id_connections_it->second,
-                    websocketpp::close::status::normal,
-                    close_reasons::duplicate_connection()
-                  );
-              } catch (std::exception& e) {
-                spdlog::debug("error closing duplicate connection: {}",
-                  e.what());
-              }
-
-              m_connection_ids.erase(id_connections_it->second);
-              m_id_connections.erase(id_connections_it);
-            }
-
-            m_connection_ids.emplace(hdl, id);
-            m_id_connections.emplace(id, hdl);
-            m_new_connections.erase(hdl);
-          }
-
+          setup_connection_id(hdl, id);
           m_session_players[sid].insert(id.player);
-          player_connect(id, login_json);
+          spdlog::debug(
+              "player {} connected with session {}: {}",
+              id.player,
+              id.session,
+              login_json.dump()
+            );
+          m_handle_open(id, std::move(login_json));
         } else {
-          close_hdl(
+          send_to_hdl(
               hdl,
               m_get_result_str(
-                { id.player, m_locked_sessions.at(id.session).session },
-                m_locked_sessions.at(id.session).data
-              )
+                  { id.player, m_locked_sessions.at(id.session).session },
+                  m_locked_sessions.at(id.session).data
+                )
             );
+          close_hdl(hdl, close_reasons::session_complete());
         }
       } else {
-        m_server.close(
-            hdl,
-            websocketpp::close::status::normal,
-            close_reasons::invalid_jwt()
-          );
+        close_hdl(hdl, close_reasons::invalid_jwt());
       }
     }
 
@@ -673,9 +633,7 @@ namespace jwt_game_server {
         combined_id,
         std::owner_less<connection_hdl>
       > m_connection_ids;
-
     unordered_map<combined_id, connection_hdl, id_hash> m_id_connections;
-    unordered_map<session_id, set<player_id>, id_hash> m_session_players;
 
     // m_connection_lock guards the members m_new_connections,
     // m_id_connections, and m_connection_ids
@@ -687,8 +645,10 @@ namespace jwt_game_server {
     buffered_map<
         unordered_map<session_id, session_data, id_hash>
       > m_locked_sessions;
+    unordered_map<session_id, set<player_id>, id_hash> m_session_players;
 
-    // m_action_lock guards the members m_locked_sessions, and m_session_ids
+    // m_session_lock guards the members m_locked_sessions, and
+    // m_session_players
     mutex m_session_lock;
 
     queue<action> m_actions;
@@ -698,9 +658,9 @@ namespace jwt_game_server {
     condition_variable m_action_cond;
 
     // functions to handle client actions
-    function<void(const combined_id&, const json&)> m_handle_open;
+    function<void(const combined_id&, json&&)> m_handle_open;
     function<void(const combined_id&)> m_handle_close;
-    function<void(const combined_id&, const json&)> m_handle_message;
+    function<void(const combined_id&, std::string&&)> m_handle_message;
   };
 }
 

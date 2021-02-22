@@ -13,7 +13,7 @@ algorithm. All networking and authentication is handled by the library; see
 examples.
 
 The base server class wraps a
-[WebSocket++](https://github.com/zaphoyd/websocketpp) and provides JWT
+[WebSocket++](https://github.com/zaphoyd/websocketpp) server and provides JWT
 authentication with player id and session id layers. A player id is an
 identifier unique to each player while session id is unique to a particular
 session with the server.
@@ -23,10 +23,11 @@ JWT, the session is started. Each
 session persists until it is ended by the server, at which point a signed
 session result JWT is sent back to all participating clients.
 Sessions that have ended are archived for a period of
-time; this period should be long enough that the login JWT expires for all
-participating clients. If a user
+time; this period should be longer then the expiration time of any associated JWTs.
+
+If a user
 attempts to connect with a login JWT for an ended session, they are simply sent the
-session result JWT and their connection is terminated. In this way we can ensure
+session result JWT and their connection is terminated. In this way we ensure
 that each session takes place at most once, and that each participating client
 receives a token to verify their participation in the session.
 

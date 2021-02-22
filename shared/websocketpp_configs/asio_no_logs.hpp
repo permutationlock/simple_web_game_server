@@ -1,0 +1,43 @@
+#ifndef JWT_GAME_SERVER_ASIO_NO_LOGS_HPP
+#define JWT_GAME_SERVER_ASIO_NO_LOGS_HPP
+
+#include <websocketpp/config/asio_no_tls.hpp>
+
+struct asio_no_logs : public websocketpp::config::asio {
+  using type = asio_no_logs;
+  using super = websocketpp::config::asio;
+
+  using concurrency_type = super::concurrency_type;
+
+  using request_type = super::request_type;
+  using response_type = super::response_type;
+
+  using message_type = super::message_type;
+  using con_msg_manager_type = super::con_msg_manager_type;
+  using endpoint_msg_manager_type = super::endpoint_msg_manager_type;
+
+  using alog_type = super::alog_type;
+  using elog_type = super::elog_type;
+
+  using rng_type = super::rng_type;
+
+  struct transport_config : public super::transport_config {
+    using concurrency_type = type::concurrency_type;
+    using alog_type = type::alog_type;
+    using elog_type = type::elog_type;
+    using request_type = type::request_type;
+    using response_type = type::response_type;
+    using socket_type = websocketpp::transport::asio::basic_socket::endpoint;
+  };
+
+  using transport_type =
+    websocketpp::transport::asio::endpoint<transport_config>;
+
+  static const websocketpp::log::level elog_level = 
+    websocketpp::log::elevel::none;
+
+  static const websocketpp::log::level alog_level =
+    websocketpp::log::alevel::none;
+};
+
+#endif // JWT_GAME_SERVER_ASIO_NO_LOGS_HPP

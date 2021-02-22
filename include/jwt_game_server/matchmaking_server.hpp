@@ -186,10 +186,10 @@ namespace jwt_game_server {
       for(connection_update& update : connection_updates) {
         auto it = m_session_data.find(update.session);
         if(update.disconnection) {
-          spdlog::trace(
-              "processiong disconnection for session {}", update.session
-            );
           if(it != m_session_data.end()) {
+            spdlog::trace(
+                "processiong disconnection for session {}", update.session
+              );
             m_jwt_server.complete_session(
                 update.session,
                 update.session,

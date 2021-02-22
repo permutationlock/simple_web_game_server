@@ -1,0 +1,38 @@
+.TicTacToe-board-row:after {
+  clear: both;
+  content: "";
+  display: table;
+}
+
+.TicTacToe-square {
+  background: #fff;
+  border: 1px solid #999;
+  float: left;
+  font-size: 32px;
+  font-weight: bold;
+  line-height: 50px;
+  height: 50px;
+  margin-right: -1px;
+  margin-top: -1px;
+  padding: 0;
+  text-align: center;
+  width: 50px;
+}
+
+.TicTacToe-square:focus {
+  outline: none;
+}
+
+.kbd-navigation .TicTacToe-square:focus {
+  background: #ddd;
+}
+
+.TicTacToe-status-bar {
+  text-align: center;
+  padding-bottom: 5px;
+}
+
+.TicTacToe-timer {
+  text-align: center;
+  padding-top: 5px;
+}

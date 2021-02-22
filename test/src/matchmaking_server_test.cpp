@@ -9,7 +9,6 @@
 #include <jwt_game_server/matchmaking_server.hpp>
 #include <jwt_game_server/client.hpp>
 #include <json_traits/nlohmann_traits.hpp>
-#include <model_games/minimal_game.hpp>
 
 #include <websocketpp_configs/asio_no_logs.hpp>
 #include <websocketpp_configs/asio_client_no_logs.hpp>
@@ -21,11 +20,12 @@
 
 #include "constants.hpp"
 #include "create_clients.hpp"
+#include "test_game.hpp"
 
 // create JWTs matchmaking auth tokens for the given players
 void create_matchmaker_tokens(
     std::vector<std::string>& tokens,
-    const std::vector<minimal_game::player_traits::id> player_list,
+    const std::vector<test_game::player_traits::id> player_list,
     const std::string& secret,
     const std::string& issuer
   )
@@ -47,12 +47,12 @@ void create_matchmaker_tokens(
 TEST_CASE("players should interact with the server with no errors") {
   using namespace std::chrono_literals;
 
-  using minimal_client = jwt_game_server::client<
+  using test_client = jwt_game_server::client<
       asio_client_no_logs
     >;
 
-  using minimal_matchmaking_server = jwt_game_server::matchmaking_server<
-      minimal_matchmaker,
+  using test_matchmaking_server = jwt_game_server::matchmaking_server<
+      test_matchmaker,
       jwt::default_clock,
       nlohmann_traits,
       asio_no_logs
@@ -75,17 +75,17 @@ TEST_CASE("players should interact with the server with no errors") {
     std::string last_message;
   };
 
-  using combined_id = minimal_game::player_traits::id;
+  using combined_id = test_game::player_traits::id;
   using player_id = combined_id::player_id;
   using session_id = combined_id::session_id;
   using json = nlohmann::json;
 
   // setup logging sink to track errors
   std::ostringstream oss;
-  //auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(oss);
-  //auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
-  //spdlog::set_default_logger(logger);
-  spdlog::set_level(spdlog::level::trace);
+  auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(oss);
+  auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
+  spdlog::set_default_logger(logger);
+  spdlog::set_level(spdlog::level::err);
 
   // create a jwt verifier
   const std::string secret = "secret";
@@ -106,14 +106,14 @@ TEST_CASE("players should interact with the server with no errors") {
       return temp.dump();
     };
 
-  minimal_matchmaking_server mms{
+  test_matchmaking_server mms{
       verifier, 
       sign_game
     };
   std::thread server_thr, match_thr, msg_process_thr;
 
   server_thr = std::thread{
-      bind(&minimal_matchmaking_server::run, &mms, SERVER_PORT, true)
+      bind(&test_matchmaking_server::run, &mms, SERVER_PORT, true)
     };
 
   while(!mms.is_running()) {
@@ -123,11 +123,11 @@ TEST_CASE("players should interact with the server with no errors") {
   CHECK(oss.str() == std::string{""});
  
   msg_process_thr = std::thread{
-      bind(&minimal_matchmaking_server::process_messages,&mms)
+      bind(&test_matchmaking_server::process_messages,&mms)
     };
 
   match_thr = std::thread{
-      bind(&minimal_matchmaking_server::match_players, &mms, 100ms)
+      bind(&test_matchmaking_server::match_players, &mms, 100ms)
     };
 
   std::this_thread::sleep_for(100ms);
@@ -135,7 +135,7 @@ TEST_CASE("players should interact with the server with no errors") {
   CHECK(oss.str() == std::string{""});
 
   std::size_t PLAYER_COUNT;
-  std::vector<minimal_client> clients;
+  std::vector<test_client> clients;
   std::vector<test_client_data> client_data_list;
   std::vector<std::thread> client_threads;
   std::vector<std::string> tokens;
@@ -146,7 +146,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
-    create_clients<player_id, minimal_client, test_client_data>(
+    create_clients<player_id, test_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
       );
 
@@ -166,7 +166,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
-    create_clients<player_id, minimal_client, test_client_data>(
+    create_clients<player_id, test_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
       );
 
@@ -215,7 +215,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
-    create_clients<player_id, minimal_client, test_client_data>(
+    create_clients<player_id, test_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
       );
 
@@ -262,7 +262,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
-    create_clients<player_id, minimal_client, test_client_data>(
+    create_clients<player_id, test_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT
       );
 
@@ -278,7 +278,7 @@ TEST_CASE("players should interact with the server with no errors") {
 
     create_matchmaker_tokens(tokens, player_list, secret, issuer);
 
-    create_clients<player_id, minimal_client, test_client_data>(
+    create_clients<player_id, test_client, test_client_data>(
         clients, client_data_list, client_threads, tokens, uri, PLAYER_COUNT, 100
       );
 
@@ -295,7 +295,7 @@ TEST_CASE("players should interact with the server with no errors") {
   for(std::size_t i = 0; i < PLAYER_COUNT; i++) {
     try {
       clients[i].disconnect();
-    } catch(minimal_client::client_error& e) {}
+    } catch(test_client::client_error& e) {}
   }
 
   for(std::size_t i = 0; i < PLAYER_COUNT; i++) {

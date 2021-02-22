@@ -38,9 +38,9 @@ TEST_CASE("the base client should interact with a websocket server") {
 
   // setup logging sink to track errors
   std::ostringstream oss;
-  //auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt> (oss);
-  //auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
-  //spdlog::set_default_logger(logger);
+  auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt> (oss);
+  auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
+  spdlog::set_default_logger(logger);
   spdlog::set_level(spdlog::level::err);
 
   struct test_data {

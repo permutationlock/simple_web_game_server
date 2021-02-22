@@ -40,7 +40,7 @@ namespace jwt_game_server {
       connection_update(const session_id& i) : session(i),
         disconnection(true) {}
       connection_update(const session_id& i, json&& d) : session(i),
-        data(d), disconnection(false) {}
+        data(std::move(d)), disconnection(false) {}
 
       session_id session;
       json data;
@@ -105,6 +105,7 @@ namespace jwt_game_server {
         m_session_data.clear();
         m_connection_updates.clear();
       }
+      m_match_condition.notify_one();
     }
 
     std::size_t get_player_count() {
@@ -240,7 +241,7 @@ namespace jwt_game_server {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
         m_connection_updates.emplace_back(
-            id.session, std::forward<json>(data)
+            id.session, std::move(data)
           );
       }
       m_match_condition.notify_one();

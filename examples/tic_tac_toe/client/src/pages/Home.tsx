@@ -24,7 +24,6 @@ class Home extends React.Component<HomeProps, HomeState> {
   }
 
   handleClick() {
-    console.log("/match/" + this.state.token);
     this.props.history.push("/match/" + this.state.token);
   }
 

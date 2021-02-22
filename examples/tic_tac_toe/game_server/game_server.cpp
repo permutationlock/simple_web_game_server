@@ -61,7 +61,7 @@ int main() {
   std::thread msg_process_thr{bind(&ttt_server::process_messages,&gs)};
 
   // bind a thread to update all running games at regular time steps
-  std::thread game_thr{bind(&ttt_server::update_games, &gs, 10ms)};
+  std::thread game_thr{bind(&ttt_server::update_games, &gs, 100ms)};
 
   gs_server_thr.join();
   msg_process_thr.join();

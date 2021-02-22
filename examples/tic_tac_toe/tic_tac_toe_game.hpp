@@ -231,7 +231,7 @@ public:
       }
 
       m_elapsed_time += delta_time;
-      if(m_elapsed_time >= 500) {
+      if(m_elapsed_time >= 1000) {
         for(player_id player : m_player_list) {
           if(m_data_map[player].is_connected) {
             out_messages.emplace_back(player, get_time_state(player).dump());
@@ -264,7 +264,7 @@ public:
 
         for(player_id player : m_player_list) {
           if(m_data_map[player].is_connected) {
-            out_messages.emplace_back(player, get_time_state(player).dump());
+            out_messages.emplace_back(player, get_game_state(player).dump());
           }
         }
       }

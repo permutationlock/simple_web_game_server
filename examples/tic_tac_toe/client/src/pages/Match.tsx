@@ -5,7 +5,8 @@ import { RouteComponentProps } from 'react-router-dom';
 type MatchState = {
   socket: WebSocket | null,
   matching: boolean,
-  matched: boolean
+  matched: boolean,
+  searchBar: HTMLElement | null
 };
 
 type MatchParams = { token: string };
@@ -18,7 +19,8 @@ class Match extends React.Component<MatchProps, MatchState> {
     this.state = {
       socket: null,
       matching: false,
-      matched: false
+      matched: false,
+      searchBar: null
     };
   }
 
@@ -27,15 +29,17 @@ class Match extends React.Component<MatchProps, MatchState> {
 
     var ws = new WebSocket("ws://localhost:9091");
 
-    console.log(token);
     ws.onopen = () => {
-      this.setState({ socket: ws, matching: true, matched: false });
-      this.state.socket!.send(token);
+      if(ws != null) {
+        ws.send(token);
+        this.setState({ socket: ws, matching: true, matched: false });
+      }
     };
     
     ws.onmessage = (e) => {
       if(this.state.matching) {
         this.setState({ matching: false, matched: true});
+        console.log("game token: " + e.data);
         this.props.history.push("/game/" + e.data);
       }
     };
@@ -46,6 +50,12 @@ class Match extends React.Component<MatchProps, MatchState> {
         this.props.history.push("/");
       }
     };
+
+    setInterval(() => {
+        if(this.state.searchBar === null) {
+          
+        }
+      });
   }
 
   stopMatchmaking() {
@@ -58,9 +68,10 @@ class Match extends React.Component<MatchProps, MatchState> {
   render() {
     return (
       <div className="Match">
-        <p>searching for game</p>
         <button disabled={!this.state.matching}
           onClick={this.stopMatchmaking.bind(this)}>Cancel matchmaking</button>
+
+        <p id="Match:search-bar">Searching for game.</p>
       </div>
     );
   }

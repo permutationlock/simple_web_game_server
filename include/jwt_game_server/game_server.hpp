@@ -37,7 +37,7 @@ namespace jwt_game_server {
     struct connection_update {
       connection_update(const combined_id& i) : id(i), disconnection(true) {}
       connection_update(const combined_id& i, json&& d) : id(i),
-        data(d), disconnection(false) {}
+        data(std::move(d)), disconnection(false) {}
 
       combined_id id;
       json data;
@@ -111,6 +111,7 @@ namespace jwt_game_server {
         lock_guard<mutex> guard(m_connection_update_list_lock);
         m_connection_updates.clear();
       }
+      m_game_condition.notify_one();
     }
 
     std::size_t get_player_count() {

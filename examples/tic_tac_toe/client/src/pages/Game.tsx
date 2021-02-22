@@ -13,6 +13,7 @@ var closeReasons = new Set([
 type GameState = {
   socket: WebSocket | null,
   done: boolean,
+  started: boolean,
   gameData: GameData
 };
 
@@ -26,7 +27,8 @@ class Game extends React.Component<GameProps, GameState> {
     this.state = {
       socket: null,
       done: false,
-      gameData: new GameData()
+      gameData: new GameData(),
+      started: false
     };
 
     this.connect = this.connect.bind(this);
@@ -50,17 +52,22 @@ class Game extends React.Component<GameProps, GameState> {
 
       console.log(token);
       ws.onopen = () => {
-        console.log("connected to " + ws_uri);
-        this.setState({
-            socket: ws,
-            done: false
-          });
-        this.state.socket!.send(token);
+        if(ws != null) {
+          ws.send(token);
+          console.log("connected to " + ws_uri);
+          this.setState({
+              socket: ws,
+              done: false
+            });
+        }
       };
 
       ws.onmessage = (e) => {
         console.log("received ws message: " + e.data);
-        this.setState({ gameData: parseUpdate(this.state.gameData, e.data) });
+        this.setState({
+            gameData: parseUpdate(this.state.gameData, e.data),
+            started: true
+          });
       };
 
       ws.onclose = (e) => {
@@ -104,6 +111,8 @@ class Game extends React.Component<GameProps, GameState> {
           gameData={this.state.gameData}
           move={this.move}
           finish={this.finish}
+          localUpdate={this.localUpdate}
+          started={this.state.started}
           connected={this.state.socket != null}
         />
       </div>

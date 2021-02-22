@@ -100,7 +100,7 @@ namespace jwt_game_server {
     struct action {
       action(action_type t, connection_hdl h) : type(t), hdl(h) {}
       action(action_type t, connection_hdl h, std::string&& m)
-        : type(t), hdl(h), msg(m) {}
+        : type(t), hdl(h), msg(std::move(m)) {}
       action(action_type t, connection_hdl h, const std::string& m)
         : type(t), hdl(h), msg(m) {}
 
@@ -123,7 +123,7 @@ namespace jwt_game_server {
       using value_type = typename map_type::value_type;
 
       void insert(value_type&& p) {
-        m_map1.insert(p);
+        m_map1.insert(std::move(p));
       }
 
       const mapped_type& at(const key_type& key) const {
@@ -545,7 +545,7 @@ namespace jwt_game_server {
             id.session
           );
 
-        close_hdl(hdl, close_reasons::duplicate_connection());
+        close_hdl(id_connections_it->second, close_reasons::duplicate_connection());
 
         m_connection_ids.erase(id_connections_it->second);
         m_id_connections.erase(id_connections_it);

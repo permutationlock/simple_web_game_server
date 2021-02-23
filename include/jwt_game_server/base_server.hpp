@@ -1,7 +1,6 @@
 #ifndef JWT_GAME_SERVER_BASE_SERVER_HPP
 #define JWT_GAME_SERVER_BASE_SERVER_HPP
 
-#include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
 
 #include <jwt-cpp/jwt.h>
@@ -181,6 +180,14 @@ namespace jwt_game_server {
           bind(&base_server::on_message, this, jwt_game_server::_1,
             jwt_game_server::_2)
         );
+    }
+
+    void set_tls_init_handler(function<ssl_context_ptr(connection_hdl)> f) {
+      if(!m_is_running) {
+        m_server.set_tls_init_handler(f);
+      } else {
+        throw server_error{"set_tls_init_handler called on running server"};
+      }
     }
 
     void set_open_handler(function<void(const combined_id&,json&&)> f) {

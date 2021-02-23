@@ -89,6 +89,10 @@ namespace jwt_game_server {
         function<std::string(const combined_id&, const json&)> f
       ) : matchmaking_server{v, f, 3600s} {}
 
+    void set_tls_init_handler(function<ssl_context_ptr(connection_hdl)> f) {
+      m_jwt_server.set_tls_init_handler(f);
+    }
+
     void run(uint16_t port, bool unlock_address = false) {
       m_jwt_server.run(port, unlock_address);
     }

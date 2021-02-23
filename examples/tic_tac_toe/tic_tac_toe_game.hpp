@@ -407,11 +407,13 @@ private:
   tic_tac_toe_board m_board;
 };
 
-struct tic_tac_toe_matchmaker {
+class tic_tac_toe_matchmaker {
 public:
   using player_traits = tic_tac_toe_player_traits;
   using session_id = player_traits::id::session_id;
-  using hash_id = player_traits::id::hash;
+  using id_hash = player_traits::id::hash;
+  using message = std::pair<session_id, std::string>;
+  using game = std::tuple<std::vector<session_id>, session_id, json>;
 
   struct session_data {
     session_data(const json& data) {}
@@ -421,30 +423,19 @@ public:
     }
   };
 
-  struct game {
-    game(const vector<session_id>& sl, session_id sid) : session_list(sl),
-      session(sid)
-    {
-      data["matched"] = true;
-    }
-
-    vector<session_id> session_list;
-    session_id session;
-    json data;
-  };
-
   tic_tac_toe_matchmaker() : m_sid_count(0) {}
 
   bool can_match(
-      const unordered_map<session_id, session_data, hash_id>& session_map
-    ) const
+      const unordered_map<session_id, session_data, id_hash>& session_map
+    )
   {
-    return session_map.size() >= 2;
+    return session_map.size() > 1;
   }
 
   void match(
       vector<game>& game_list,
-      const unordered_map<session_id, session_data, hash_id>& session_map,
+      vector<message>& messages,
+      const unordered_map<session_id, session_data, id_hash>& session_map,
       long delta_time
     )
   {
@@ -452,12 +443,15 @@ public:
     for(auto& spair : session_map) {
       sl.push_back(spair.first);
       if(sl.size() > 1) {
-        game_list.push_back(game{sl, m_sid_count++});
-        sl.clear();
+        game_list.emplace_back(
+            std::move(sl), 
+            m_sid_count++,
+            json{ { "matched", true } }
+          );
       }
     }
   }
- 
+
   json get_cancel_data() const {
     json temp;
     temp["matched"] = false;

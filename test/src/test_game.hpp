@@ -13,6 +13,8 @@ using json = nlohmann::json;
 #include <unordered_map>
 #include <queue>
 #include <functional>
+#include <tuple>
+#include <utility>
 
 using std::vector;
 using std::unordered_map;
@@ -140,6 +142,8 @@ public:
   using player_traits = test_player_traits;
   using session_id = player_traits::id::session_id;
   using id_hash = player_traits::id::hash;
+  using message = std::pair<session_id, std::string>;
+  using game = std::tuple<std::vector<session_id>, session_id, json>;
 
   struct session_data {
     session_data(const json& data) {}
@@ -147,18 +151,6 @@ public:
     bool is_valid() {
       return true;
     }
-  };
-
-  struct game {
-    game(const vector<session_id>& sl, session_id sid) : session_list(sl),
-      session(sid)
-    {
-      data["matched"] = true;
-    }
-
-    vector<session_id> session_list;
-    session_id session;
-    json data;
   };
 
   test_matchmaker() : m_sid_count(0) {}
@@ -172,6 +164,7 @@ public:
 
   void match(
       vector<game>& game_list,
+      vector<message>& messages,
       const unordered_map<session_id, session_data, id_hash>& session_map,
       long delta_time
     )
@@ -180,8 +173,11 @@ public:
     for(auto& spair : session_map) {
       sl.push_back(spair.first);
       if(sl.size() > 1) {
-        game_list.emplace_back(sl, m_sid_count++);
-        sl.clear();
+        game_list.emplace_back(
+            std::move(sl), 
+            m_sid_count++,
+            json{ { "matched", true } }
+          );
       }
     }
   }

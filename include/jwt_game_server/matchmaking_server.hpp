@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <chrono>
 #include <functional>
+#include <tuple>
 
 namespace jwt_game_server {
   // Time literals to initialize timestep variables
@@ -33,16 +34,19 @@ namespace jwt_game_server {
     using id_hash = typename jwt_base_server::id_hash;
  
     using json = typename jwt_base_server::json;
-    using session_data = typename matchmaker::session_data;
     using clock = typename jwt_base_server::clock;
 
+    using game = std::tuple<vector<session_id>, session_id, json>;
+    using message = pair<session_id, std::string>;
+    using session_data = typename matchmaker::session_data;
+
     struct connection_update {
-      connection_update(const session_id& i) : session(i),
+      connection_update(const combined_id& i) : id(i),
         disconnection(true) {}
-      connection_update(const session_id& i, json&& d) : session(i),
+      connection_update(const combined_id& i, json&& d) : id(i),
         data(std::move(d)), disconnection(false) {}
 
-      session_id session;
+      combined_id id;
       json data;
       bool disconnection;
     };
@@ -103,6 +107,7 @@ namespace jwt_game_server {
       {
         lock_guard<mutex> guard(m_match_lock);
         m_session_data.clear();
+        m_session_players.clear();
         m_connection_updates.clear();
       }
       m_match_condition.notify_one();
@@ -155,18 +160,41 @@ namespace jwt_game_server {
             for(const session_id& sid : finished_sessions) {
               spdlog::trace("erasing data for session {}", sid);
               m_session_data.erase(sid);
+              m_session_players.erase(sid);
             }
 
             std::swap(finished_sessions, new_finished_sessions);
           }
 
-          vector<typename matchmaker::game> games;
-          m_matchmaker.match(games, m_session_data, dt_count);
+          vector<game> games;
+          {
+            vector<pair<session_id, std::string> > messages;
+            m_matchmaker.match(games, messages, m_session_data, dt_count);
+
+            for(message& msg : messages) {
+              auto session_players_it = m_session_players.find(msg.first);
+              if(session_players_it != m_session_players.end()) {
+                for(player_id pid : session_players_it->second) {
+                  m_jwt_server.send_message(
+                      { pid, msg.first }, std::move(msg.second)
+                    );
+                }
+              }
+            }
+          }
  
-          for(auto& g : games) {
-            spdlog::trace("matched game: {}", g.data.dump());
-            for(session_id& sid : g.session_list) {
-              m_jwt_server.complete_session(sid, g.session, std::move(g.data));
+          for(game& g : games) {
+            vector<session_id> sessions;
+            session_id game_sid;
+            json game_data;
+            std::tie(sessions, game_sid, game_data) = std::move(g);
+
+            spdlog::trace("matched game: {}", game_data.dump());
+
+            for(session_id& sid : sessions) {
+              m_jwt_server.complete_session(
+                  sid, game_sid, std::move(game_data)
+                );
               finished_sessions.push_back(sid);
             }
           }
@@ -184,39 +212,45 @@ namespace jwt_game_server {
 
       vector<session_id> finished_sessions;
       for(connection_update& update : connection_updates) {
-        auto it = m_session_data.find(update.session);
+        auto it = m_session_data.find(update.id.session);
         if(update.disconnection) {
           if(it != m_session_data.end()) {
             spdlog::trace(
-                "processiong disconnection for session {}", update.session
+                "processiong disconnection for session {}", update.id.session
               );
             m_jwt_server.complete_session(
-                update.session,
-                update.session,
+                update.id.session,
+                update.id.session,
                 m_matchmaker.get_cancel_data()
               );
-            m_session_data.erase(update.session);
-            finished_sessions.push_back(update.session);
+            m_session_data.erase(it);
+            m_session_players.erase(update.id.session);
+            finished_sessions.push_back(update.id.session);
           }
         } else {
           spdlog::trace(
-              "processiong connection for session {}", update.session
+              "processiong connection for session {}", update.id.session
             );
           if(it == m_session_data.end()) {
             session_data data{update.data};
 
             if(data.is_valid()) {
               m_session_data.emplace(
-                  update.session, std::move(data)
+                  update.id.session, std::move(data)
+                );
+              m_session_players.emplace(
+                  update.id.session, set<player_id>{ update.id.player }
                 );
             } else {
               m_jwt_server.complete_session(
-                  update.session,
-                  update.session,
+                  update.id.session,
+                  update.id.session,
                   m_matchmaker.get_cancel_data()
                 );
-              finished_sessions.push_back(update.session);
+              finished_sessions.push_back(update.id.session);
             }
+          } else {
+            m_session_players.at(update.id.session).insert(update.id.player);
           }
         }
       }
@@ -232,7 +266,7 @@ namespace jwt_game_server {
     void process_message(const combined_id& id, std::string&& data) {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
-        m_connection_updates.emplace_back(id.session);
+        m_connection_updates.emplace_back(id);
       }
       m_match_condition.notify_one();
     }
@@ -241,7 +275,7 @@ namespace jwt_game_server {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
         m_connection_updates.emplace_back(
-            id.session, std::move(data)
+            id, std::move(data)
           );
       }
       m_match_condition.notify_one();
@@ -250,7 +284,7 @@ namespace jwt_game_server {
     void player_disconnect(const combined_id& id) {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
-        m_connection_updates.emplace_back(id.session);
+        m_connection_updates.emplace_back(id);
       }
       m_match_condition.notify_one();
     }
@@ -259,6 +293,7 @@ namespace jwt_game_server {
     matchmaker m_matchmaker;
 
     unordered_map<session_id, session_data, id_hash> m_session_data;
+    unordered_map<session_id, set<player_id>, id_hash> m_session_players;
     mutex m_match_lock;
 
     std::vector<connection_update> m_connection_updates;

@@ -44,30 +44,6 @@ TEST_CASE(
   CHECK(one_player.is_valid() == false);
 }
 
-TEST_CASE("matchmaker games should track player list and data json") {
-  using std::vector;
-
-  using session_id = test_player_traits::id::session_id;
-  using game = test_matchmaker::game;
-
-  SUBCASE("empty game should have an empty session_list") {
-    game g{vector<session_id>{}, 0};
-
-    CHECK(g.session_list.size() == 0);
-    CHECK(g.data["matched"] == true);
-  }
-
-  SUBCASE("game with two players should store correctly and parse to json") {
-    game g{vector<session_id>{8, 915}, 87};
-
-    CHECK(g.session_list.size() == 2);
-    CHECK(g.session_list == std::vector<session_id>{8, 915});
-    CHECK(g.session == 87);
-
-    CHECK(g.data["matched"] == true);
-  }
-}
-
 TEST_CASE("matchmaker should provide json data for canceled sessions") {
   using json = nlohmann::json;
 
@@ -76,29 +52,6 @@ TEST_CASE("matchmaker should provide json data for canceled sessions") {
   json inv_data = matchmaker.get_cancel_data();
 
   CHECK(inv_data["matched"] == false);
-}
-
-TEST_CASE("matchmaker game should track session list and data json") {
-  using std::vector;
-
-  using session_id = test_player_traits::id::session_id;
-  using game = test_matchmaker::game;
-
-  SUBCASE("empty game should have an empty session_list") {
-    game g{vector<session_id>{}, 0};
-
-    CHECK(g.session_list.size() == 0);
-    CHECK(g.data["matched"] == true);
-  }
-
-  SUBCASE("game with two players should store correctly and parse to json") {
-    game g{vector<session_id>{8, 915}, 87};
-
-    CHECK(g.session_list.size() == 2);
-    CHECK(g.session_list == std::vector<session_id>{8, 915});
-    CHECK(g.session == 87);
-    CHECK(g.data["matched"] == true);
-  }
 }
 
 TEST_CASE("matchmaking data match function should pair players") {
@@ -110,13 +63,15 @@ TEST_CASE("matchmaking data match function should pair players") {
   using id_hash = test_player_traits::id::hash;
   using session_data = test_matchmaker::session_data;
   using game = test_matchmaker::game;
+  using message = test_matchmaker::message;
 
   test_matchmaker matchmaker;
   unordered_map<session_id, session_data, id_hash> session_map;
+  vector<message> messages;
+  vector<game> games;
 
   SUBCASE("empty map should return empty list of games") {
-    vector<game> games;
-    matchmaker.match(games, session_map, 0);
+    matchmaker.match(games, messages, session_map, 0);
 
     CHECK(games.size() == 0);
   }
@@ -124,14 +79,13 @@ TEST_CASE("matchmaking data match function should pair players") {
   SUBCASE("map with two players should return one game") {
     session_map.emplace(std::make_pair(9, session_data{json{}}));
     session_map.emplace(std::make_pair(3241, session_data{json{}}));
-    vector<game> games;
-    matchmaker.match(games, session_map, 0);
+    matchmaker.match(games, messages, session_map, 0);
 
     CHECK(games.size() == 1);
 
     unordered_set<session_id, id_hash> sessions;
     for(const game& g : games) {
-      for(session_id sid : g.session_list) {
+      for(session_id sid : std::get<0>(g)) {
         sessions.insert(sid);
       }
     }
@@ -156,14 +110,13 @@ TEST_CASE("matchmaking data match function should pair players") {
     session_map.emplace(std::make_pair(82, session_data{json{}}));
     session_map.emplace(std::make_pair(312, session_data{json{}}));
     session_map.emplace(std::make_pair(10, session_data{json{}}));
-    vector<game> games;
-    matchmaker.match(games, session_map, 0);
+    matchmaker.match(games, messages, session_map, 0);
 
     CHECK(games.size() == 3);
 
     unordered_set<session_id, id_hash> sessions;
     for(const game& g : games) {
-      for(session_id sid : g.session_list) {
+      for(session_id sid : std::get<0>(g)) {
         sessions.insert(sid);
       }
     }

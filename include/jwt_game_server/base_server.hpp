@@ -272,6 +272,7 @@ namespace jwt_game_server {
           m_id_connections.clear();
           m_new_connections.clear();
           m_locked_sessions.clear();
+          m_locked_sessions.clear();
           m_session_players.clear();
         }
         m_action_cond.notify_all();
@@ -557,8 +558,7 @@ namespace jwt_game_server {
     }
 
     void open_session(connection_hdl hdl, const std::string& login_token) {
-      player_id pid;
-      session_id sid;
+      combined_id id;
       json login_json;
       bool completed = false;
       try {
@@ -566,9 +566,14 @@ namespace jwt_game_server {
           jwt::decode<json_traits>(login_token);
         m_jwt_verifier.verify(decoded_token);
         auto claim_map = decoded_token.get_payload_claims();
-        pid = player_traits::parse_player_id(claim_map.at("pid").to_json());
-        sid = player_traits::parse_session_id(claim_map.at("sid").to_json());
+        player_id pid = player_traits::parse_player_id(
+            claim_map.at("pid").to_json()
+          );
+        session_id sid = player_traits::parse_session_id(
+            claim_map.at("sid").to_json()
+          );
         login_json = claim_map.at("data").to_json();
+        id = combined_id{pid, sid};
         completed = true;
       } catch(std::out_of_range& e) {
         spdlog::debug(
@@ -589,15 +594,13 @@ namespace jwt_game_server {
         spdlog::debug("connection provided invalid json in jwt: {}", e.what());
       }
 
-      combined_id id{pid, sid};
-
       if(completed) {
         lock_guard<mutex> session_guard(m_session_lock);
         update_session_locks();
 
         if(!m_locked_sessions.contains(id.session)) {
           setup_connection_id(hdl, id);
-          m_session_players[sid].insert(id.player);
+          m_session_players[id.session].insert(id.player);
           spdlog::debug(
               "player {} connected with session {}: {}",
               id.player,

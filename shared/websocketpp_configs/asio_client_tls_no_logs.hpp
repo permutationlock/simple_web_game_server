@@ -1,11 +1,11 @@
-#ifndef JWT_GAME_SERVER_ASIO_NO_LOGS_HPP
-#define JWT_GAME_SERVER_ASIO_NO_LOGS_HPP
+#ifndef JWT_GAME_SERVER_ASIO_CLIENT_TLS_NO_LOGS_HPP
+#define JWT_GAME_SERVER_ASIO_CLIENT_TLS_NO_LOGS_HPP
 
-#include <websocketpp/config/asio_no_tls.hpp>
+#include <websocketpp/config/asio_client.hpp>
 
-struct asio_no_logs : public websocketpp::config::asio {
-  using type = asio_no_logs;
-  using super = websocketpp::config::asio;
+struct asio_client_tls_no_logs : public websocketpp::config::asio_tls_client {
+  using type = asio_client_tls_no_logs;
+  using super = websocketpp::config::asio_tls_client;
 
   using concurrency_type = super::concurrency_type;
 
@@ -27,7 +27,7 @@ struct asio_no_logs : public websocketpp::config::asio {
     using elog_type = type::elog_type;
     using request_type = type::request_type;
     using response_type = type::response_type;
-    using socket_type = super::transport_config::socket_type;
+    using socket_type = type::socket_type;
   };
 
   using transport_type =
@@ -40,4 +40,4 @@ struct asio_no_logs : public websocketpp::config::asio {
     websocketpp::log::alevel::none;
 };
 
-#endif // JWT_GAME_SERVER_ASIO_NO_LOGS_HPP
+#endif // JWT_GAME_SERVER_ASIO_CLIENT_TLS_NO_LOGS_HPP

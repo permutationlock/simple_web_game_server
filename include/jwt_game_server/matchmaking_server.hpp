@@ -40,6 +40,8 @@ namespace jwt_game_server {
     using message = pair<session_id, std::string>;
     using session_data = typename matchmaker::session_data;
 
+    using ssl_context_ptr = typename jwt_base_server::ssl_context_ptr;
+
     struct connection_update {
       connection_update(const combined_id& i) : id(i),
         disconnection(true) {}

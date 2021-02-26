@@ -27,7 +27,8 @@ class Match extends React.Component<MatchProps, MatchState> {
   componentDidMount() {
     const { token } = this.props.match.params;
 
-    var ws = new WebSocket("ws://localhost:9091");
+    // change to ws if not using tls
+    var ws = new WebSocket("wss://localhost:9091");
 
     ws.onopen = () => {
       if(ws != null) {

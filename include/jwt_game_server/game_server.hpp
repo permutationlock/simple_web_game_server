@@ -34,6 +34,8 @@ namespace jwt_game_server {
     using json = typename jwt_base_server::json;
     using clock = typename jwt_base_server::clock;
 
+    using ssl_context_ptr = typename jwt_base_server::ssl_context_ptr;
+
     struct connection_update {
       connection_update(const combined_id& i) : id(i), disconnection(true) {}
       connection_update(const combined_id& i, json&& d) : id(i),

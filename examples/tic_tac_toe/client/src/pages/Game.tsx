@@ -45,7 +45,7 @@ class Game extends React.Component<GameProps, GameState> {
     if(this.state.socket === null && this.state.done === false) {
       const { token } = this.props.match.params;
 
-      var ws_uri = "ws://localhost:9090";
+      var ws_uri = "wss://localhost:9090";
       var ws = new WebSocket(ws_uri);
 
       console.log("attempting to connect to " + ws_uri);

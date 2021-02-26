@@ -2,6 +2,8 @@
 #define JWT_GAME_SERVER_BASE_SERVER_HPP
 
 #include <websocketpp/server.hpp>
+#include <websocketpp/common/asio_ssl.hpp>
+#include <websocketpp/common/asio.hpp>
 
 #include <jwt-cpp/jwt.h>
 
@@ -81,6 +83,9 @@ namespace jwt_game_server {
 
     using json = typename json_traits::json;
     using clock = std::chrono::high_resolution_clock;
+
+    using ssl_context_ptr = 
+      websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context>;
 
   private:
     using time_point = std::chrono::time_point<clock>;

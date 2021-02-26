@@ -3,9 +3,9 @@
 
 #include <websocketpp/config/asio_no_tls_client.hpp>
 
-struct asio_client_no_logs : public websocketpp::config::core_client {
+struct asio_client_no_logs : public websocketpp::config::asio_client {
   using type = asio_client_no_logs;
-  using super = websocketpp::config::core_client;
+  using super = websocketpp::config::asio_client;
 
   using concurrency_type = super::concurrency_type;
 
@@ -27,7 +27,7 @@ struct asio_client_no_logs : public websocketpp::config::core_client {
     using elog_type = type::elog_type;
     using request_type = type::request_type;
     using response_type = type::response_type;
-    using socket_type = websocketpp::transport::asio::basic_socket::endpoint;
+    using socket_type = super::transport_config::socket_type;
   };
 
   using transport_type =

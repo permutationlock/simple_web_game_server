@@ -13,7 +13,7 @@ class Home extends React.Component<HomeProps, HomeState> {
   };
 
   componentDidMount() {
-    const login_uri = "http://localhost:9092/login";
+    const login_uri = "https://localhost:9092/login";
 
     fetch(login_uri)
       .then(response => response.text())

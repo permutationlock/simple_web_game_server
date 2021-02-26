@@ -1,6 +1,7 @@
 {
   "name": "tictactoe-client",
   "version": "0.1.0",
+  "author": "Aven Bross",
   "private": true,
   "dependencies": {
     "@types/node": "^12.20.4",
@@ -19,11 +20,6 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app"
-    ]
   },
   "browserslist": {
     "production": [

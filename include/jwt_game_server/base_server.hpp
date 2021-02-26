@@ -359,7 +359,7 @@ namespace jwt_game_server {
         } else if(a.type == OUT_MESSAGE) {
           spdlog::trace("processing OUT_MESSAGE action");
           spdlog::trace(
-              "sending message to client hdl {}: {}"
+              "sending message to client hdl {}: {}",
               a.hdl.lock().get(),
               a.msg
             );

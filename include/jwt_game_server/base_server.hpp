@@ -320,7 +320,10 @@ namespace jwt_game_server {
           auto it = m_connection_ids.find(a.hdl);
           if(it == m_connection_ids.end()) {
             m_new_connections.erase(a.hdl);
-            spdlog::trace("client disconnected without opening session");
+            spdlog::trace(
+                "client hdl {} disconnected without opening session",
+                a.hdl.lock().get()
+              );
           } else {
             // connection provided a player id
             combined_id id = it->second;
@@ -333,7 +336,11 @@ namespace jwt_game_server {
 
           auto it = m_connection_ids.find(a.hdl);
           if(it == m_connection_ids.end()) {
-            spdlog::trace("recieved message from connection w/no id");
+            spdlog::trace(
+                "recieved message from client hdl {} w/no id: {}",
+                a.hdl.lock().get(),
+                a.msg
+              );
             conn_lock.unlock();
             open_session(a.hdl, a.msg);
           } else {
@@ -351,9 +358,20 @@ namespace jwt_game_server {
           }
         } else if(a.type == OUT_MESSAGE) {
           spdlog::trace("processing OUT_MESSAGE action");
+          spdlog::trace(
+              "sending message to client hdl {}: {}"
+              a.hdl.lock().get(),
+              a.msg
+            );
           send_to_hdl(a.hdl, a.msg);
         } else if(a.type == CLOSE_CONNECTION) { 
           spdlog::trace("processing CLOSE_CONNECTION action");
+          spdlog::trace(
+              "closing client hdl {} with final message: {}",
+              a.hdl.lock().get(),
+              a.msg
+            );
+
           send_to_hdl(a.hdl, a.msg);
           close_hdl(a.hdl, close_reasons::session_complete());
         } else {
@@ -503,7 +521,6 @@ namespace jwt_game_server {
       {
         lock_guard<mutex> guard(m_action_lock);
         if(m_is_running) {
-          spdlog::trace("connection opened");
           m_actions.push(action(SUBSCRIBE,hdl));
         } else {
           close_hdl(hdl, close_reasons::server_shutdown());
@@ -515,7 +532,6 @@ namespace jwt_game_server {
     void on_close(connection_hdl hdl) {
       {
         lock_guard<mutex> guard(m_action_lock);
-        spdlog::trace("connection closed");
         m_actions.push(action(UNSUBSCRIBE, hdl));
       }
       m_action_cond.notify_one();
@@ -524,7 +540,6 @@ namespace jwt_game_server {
     void on_message(connection_hdl hdl, message_ptr msg) {
       {
         lock_guard<mutex> guard(m_action_lock);
-        spdlog::trace("in message: {}", msg->get_payload());
         m_actions.push(action(IN_MESSAGE, hdl, std::move(msg->get_raw_payload())));
       }
       m_action_cond.notify_one();

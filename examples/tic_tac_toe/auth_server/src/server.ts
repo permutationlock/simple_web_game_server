@@ -7,7 +7,7 @@ const port = 9092;
 const secret = "secret";
 
 var id_count = 0;
-var sid_count = 312;
+var sid_count = 0;
 
 function create_token(new_id: number) {
   return jsonwebtoken.sign(
@@ -16,8 +16,16 @@ function create_token(new_id: number) {
     );
 }
 
+app.get("/submit", (req, res) => {
+  res.send(verify_game_token);
+});
+
+app.get("/match", (req, res) => {
+  res.send(create_match_token(id_count++));
+});
+
 app.get("/login", (req, res) => {
-  res.send(create_token(id_count++));
+  res.send(create_id_token(id_count++));
 });
 
 

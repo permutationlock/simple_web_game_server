@@ -13,18 +13,32 @@ class Home extends React.Component<HomeProps, HomeState> {
   };
 
   componentDidMount() {
-    const login_uri = "https://localhost:9092/login";
+    const signupUri = "https://localhost:9092/signup";
 
-    fetch(login_uri)
-      .then(response => response.text())
-      .then((token_str) => {
-        console.log('login token: ' + token_str);
-        this.setState({ token: token_str, disabled: false });
-      });
+    const token = sessionStorage.getItem("token");
+    if(token == null) {
+      fetch(signupUri)
+        .then(response => response.text())
+        .then((tokenStr) => {
+          console.log('player token: ' + tokenStr);
+          sessionStorage.setItem("token", tokenStr);
+          this.setState({ token: tokenStr, disabled: false });
+        });
+    } else {
+      console.log('player token: ' + token);
+      this.setState({ token: token, disabled: false });
+    }
   }
 
   handleClick() {
-    this.props.history.push("/match/" + this.state.token);
+    const loginUri = "https://localhost:9092/login/" + this.state.token;
+
+    fetch(loginUri)
+      .then(response => response.text())
+      .then((tokenStr) => {
+        console.log('match request token: ' + tokenStr);
+        this.props.history.push("/match/" + tokenStr);
+      });
   }
 
   render() {

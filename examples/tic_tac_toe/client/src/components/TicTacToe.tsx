@@ -9,6 +9,7 @@ class GameData {
   state: number;
   your_turn: boolean;
   done: boolean;
+  token: string | null;
 
   constructor() {
     this.board = [ 0, 0, 0,
@@ -19,7 +20,8 @@ class GameData {
     this.xmove = true;
     this.state = 0;
     this.your_turn = false;
-    this.done = true;
+    this.done = false;
+    this.token = null;
   }
 };
 
@@ -40,6 +42,8 @@ function parseUpdate(gameData: GameData, text: string): GameData {
     newGameData["opponent_time"] = updateData["opponent_time"];
   } else if(updateData["type"] === "result") {
     console.log("result token: " + updateData["token"]);
+    newGameData["token"] = updateData["token"];
+    newGameData["done"] = updateData["done"];
   }
 
   return newGameData;
@@ -113,10 +117,8 @@ type TicTacToeState = {};
 
 type TicTacToeProps = { 
   gameData : GameData,
-  started : boolean,
   move : (g: GameData, s: string) => void,
   localUpdate : (g: GameData) => void,
-  finish: () => void,
   connected: boolean
 };
 
@@ -127,6 +129,27 @@ class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
     super(props);
 
     this.updateInterval = null;
+  }
+
+  componentDidMount() {
+    if(this.updateInterval === null) {
+      let updateTimer = () => {
+        if(this.props.gameData.done) {
+          if(this.updateInterval != null) {
+            clearInterval(this.updateInterval);
+          }
+        }
+
+        let newGameData = this.props.gameData;
+        if(this.props.gameData.your_turn) {
+          newGameData.time = newGameData.time - 10;
+        } else {
+          newGameData.opponent_time = newGameData.opponent_time - 10;
+        }
+        this.props.localUpdate(newGameData);
+      };
+      this.updateInterval = setInterval(updateTimer.bind(this), 10);
+    }
   }
 
   onClick(square : number) {
@@ -146,25 +169,6 @@ class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
   }
 
   render() {
-    if(this.props.started && this.updateInterval === null) {
-      let updateTimer = () => {
-        let newGameData = this.props.gameData;
-        if(this.props.gameData.your_turn) {
-          newGameData.time = newGameData.time - 10;
-        } else {
-          newGameData.opponent_time = newGameData.opponent_time - 10;
-        }
-        this.props.localUpdate(newGameData);
-
-        if(this.props.gameData.done) {
-          if(this.updateInterval != null) {
-            clearInterval(this.updateInterval);
-          }
-        }
-      };
-      this.updateInterval = setInterval(updateTimer.bind(this), 10);
-    }
-
     let isX = this.props.gameData.your_turn ? this.props.gameData.xmove :
       !this.props.gameData.xmove;
 

@@ -13,7 +13,6 @@ var closeReasons = new Set([
 type GameState = {
   socket: WebSocket | null,
   done: boolean,
-  started: boolean,
   gameData: GameData
 };
 
@@ -28,7 +27,6 @@ class Game extends React.Component<GameProps, GameState> {
       socket: null,
       done: false,
       gameData: new GameData(),
-      started: false
     };
 
     this.connect = this.connect.bind(this);
@@ -45,6 +43,7 @@ class Game extends React.Component<GameProps, GameState> {
     if(this.state.socket === null && this.state.done === false) {
       const { token } = this.props.match.params;
 
+      // change to ws if not using tls
       var ws_uri = "wss://localhost:9090";
       var ws = new WebSocket(ws_uri);
 
@@ -66,8 +65,10 @@ class Game extends React.Component<GameProps, GameState> {
         console.log("received ws message: " + e.data);
         this.setState({
             gameData: parseUpdate(this.state.gameData, e.data),
-            started: true
           });
+        if(this.state.gameData.token !== null) {
+          this.finish();
+        }
       };
 
       ws.onclose = (e) => {
@@ -101,7 +102,17 @@ class Game extends React.Component<GameProps, GameState> {
   }
 
   finish(): void {
-    this.setState({ done: true });
+    if(!this.state.done) {
+      this.setState({ done: true });
+
+      const submitUri = "https://localhost:9092/submit/"
+        + this.state.gameData.token;
+      fetch(submitUri)
+        .then(response => response.text())
+        .then((resultStr) => {
+          console.log('submit response: ' + resultStr);
+        });
+    }
   }
 
   render() {
@@ -110,9 +121,7 @@ class Game extends React.Component<GameProps, GameState> {
         <TicTacToe
           gameData={this.state.gameData}
           move={this.move}
-          finish={this.finish}
           localUpdate={this.localUpdate}
-          started={this.state.started}
           connected={this.state.socket != null}
         />
       </div>

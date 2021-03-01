@@ -617,8 +617,8 @@ namespace jwt_game_server {
             "connection provided invalid jwt token string: {}",
             e.what()
           );
-      } catch(std::runtime_error& e) {
-        spdlog::debug("connection provided invalid json in jwt: {}", e.what());
+      } catch(std::exception& e) {
+        spdlog::debug("connection provided jwt with invalid claims: {}", e.what());
       }
 
       if(completed) {

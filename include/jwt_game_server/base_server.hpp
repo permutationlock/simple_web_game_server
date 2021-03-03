@@ -23,9 +23,12 @@
 #include <mutex>
 #include <condition_variable>
 
+/**
+ * Namespace for the JWT Game Server library
+ */
+
 namespace jwt_game_server {
-  // websocketpp types
-  using websocketpp::connection_hdl;
+  using websocketpp::connection_hdl; ///< The type for a connection handle in a websocketpp server.
 
   // datatype implementations
   using std::vector;
@@ -48,6 +51,11 @@ namespace jwt_game_server {
   using std::unique_lock;
   using std::condition_variable;
 
+  /**
+   * A struct defining default close message strings for the various reasons a
+   * server might close a client connection.
+   */
+
   struct default_close_reasons {
     static inline std::string invalid_jwt() {
       return "INVALID_TOKEN";
@@ -63,11 +71,29 @@ namespace jwt_game_server {
     };
   };
 
+  /**
+   * A wrapper class around a websocketpp::server that performs client
+   * authentication with a JWT verifier and manages client sessions.
+   *
+   * The player_traits template parameter
+   * must define a struct plyaer_traits::id with members id.player, id.session
+   * of types id::player_id, id::session_id respectively. The id::hash struct
+   * must hash id, player_id, and session_id. The id type must be defualt
+   * constructable and constructable from player_id and session_id. 
+   *
+   * The jwt_clock and json_traits parameters must meet the requirements of
+   * such template types in JWT++ library.
+   */
+
   template<typename player_traits, typename jwt_clock, typename json_traits,
     typename server_config, typename close_reasons>
   class base_server {
   // type definitions
   public: 
+    /**
+     * The class representing errors with the base_server.
+     */
+
     class server_error : public std::runtime_error {
     public:
       using super = std::runtime_error;
@@ -76,20 +102,28 @@ namespace jwt_game_server {
       explicit server_error(const char* what_arg) noexcept : super(what_arg) {}
     };
 
-    using combined_id = typename player_traits::id;
+    /// The type of a client id.
+    using combined_id = typename player_traits::id; 
+    /// The type of the player component of a client id.
     using player_id = typename combined_id::player_id;
+    /// The type of the session component of a client id.
     using session_id = typename combined_id::session_id;
+    /// The type of the hash struct for all id types.
     using id_hash = typename combined_id::hash;
 
+    /// The type of a json object
     using json = typename json_traits::json;
+    /// The type of clock for server time-step management.
     using clock = std::chrono::high_resolution_clock;
 
+    /// The type of a pointer to an asio ssl context.
     using ssl_context_ptr = 
       websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context>;
 
   private:
     using time_point = std::chrono::time_point<clock>;
 
+    // The types of actions available for our action processing queue.
     enum action_type {
       SUBSCRIBE,
       UNSUBSCRIBE,
@@ -98,9 +132,12 @@ namespace jwt_game_server {
       CLOSE_CONNECTION
     };
 
+    /// The type of the websocket server.
     using ws_server = websocketpp::server<server_config>;
     using message_ptr = typename ws_server::message_ptr;
 
+    /// The type of an action that may be submitted to queue for the worker
+    /// threads running the process_messages() loop.
     struct action {
       action(action_type t, connection_hdl h) : type(t), hdl(h) {}
       action(action_type t, connection_hdl h, std::string&& m)
@@ -113,11 +150,20 @@ namespace jwt_game_server {
       std::string msg;
     };
 
+    /// The type of the result data of given session.
     struct session_data {
       session_data(const session_id& s, json&& d) : session(s), data(d) {}
       session_id session;
       json data;
     };
+
+    /**
+     * A class wrapping a pair of maps and imitating the functionality of map
+     * with the change that the clear() member function must be
+     * called exactly after an object is inserted for it to be erased. This is
+     * used in practice to ensure that session data is kept in memory for at
+     * least one time-step and at most two time-steps.
+     */
 
     template<typename map_type>
     class buffered_map {
@@ -165,6 +211,15 @@ namespace jwt_game_server {
 
   // main class body
   public:
+    /**
+     * The constructor for the base_server class. Takes a jwt::verifier v to
+     * authenticate client tokens, a function f to construct result tokens for
+     * each complete session, and the length of time in milliseconds t that
+     * complete session data should remain in memory. It is recommend that the
+     * time t should always be at least as long as the time it takes for any
+     * issued JWT that can be verified with v to expire.
+     */
+
     base_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f,
@@ -187,6 +242,10 @@ namespace jwt_game_server {
         );
     }
 
+    /**
+     * Sets a the given function f as the tls_init_handler for m_server.
+     */
+
     void set_tls_init_handler(function<ssl_context_ptr(connection_hdl)> f) {
       if(!m_is_running) {
         m_server.set_tls_init_handler(f);
@@ -194,6 +253,11 @@ namespace jwt_game_server {
         throw server_error{"set_tls_init_handler called on running server"};
       }
     }
+
+    /**
+     * Sets the given function to be called whenever a client connects and
+     * submits a verified JWT.
+     */
 
     void set_open_handler(function<void(const combined_id&,json&&)> f) {
       if(!m_is_running) {
@@ -203,6 +267,11 @@ namespace jwt_game_server {
       }
     }
 
+    /**
+     * Sets the given function to be called whenever a verified client
+     * disconnects.
+     */
+
     void set_close_handler(function<void(const combined_id&)> f) {
       if(!m_is_running) {
         m_handle_close = f;
@@ -210,6 +279,11 @@ namespace jwt_game_server {
         throw server_error{"set_close_handler called on running server"};
       }
     }
+
+    /**
+     * Sets the given function to be called whenever a verified client sends a
+     * message.
+     */
 
     void set_message_handler(function<void(const combined_id&,std::string&&)> f) {
       if(!m_is_running) {
@@ -219,32 +293,29 @@ namespace jwt_game_server {
       }
     }
 
+    /*
+     * Runs the underlying websocketpp server m_server. May be called with
+     * multiple threads so long as  unlock_address is true.
+     */
+
     void run(uint16_t port, bool unlock_address) {
       if(!m_is_running) {
         spdlog::info("server is listening on port {}", port);
         m_is_running = true;
 
-        {
-          lock_guard<mutex> action_guard(m_action_lock);
-          while(!m_actions.empty()) {
-            m_actions.pop();
-          }
-        }
-
         m_server.set_reuse_addr(unlock_address);
         m_server.listen(port);
         m_server.start_accept();
-
-        m_server.run();
-      } else {
-        throw server_error("run called on running server");
       }
+
+      m_server.run();
     }
 
     bool is_running() {
       return m_is_running;
     }
 
+    /// Resets the server so it may be started again.
     void reset() {
       if(m_is_running) {
         stop();
@@ -252,6 +323,7 @@ namespace jwt_game_server {
       m_server.reset();
     }
 
+    /// Stops the server, closes all connections, and clears all actions.
     void stop() {
       if(m_is_running) {
         m_is_running = false;
@@ -292,6 +364,11 @@ namespace jwt_game_server {
         throw server_error("stop called on stopped server");
       }
     }
+
+    /**
+     * Worker loop that process action from the queue m_actions. May be called
+     * by multiple threads.
+     */
 
     void process_messages() {
       while(m_is_running) {
@@ -380,10 +457,16 @@ namespace jwt_game_server {
       }
     }
 
+    /// Returns the number of verified clients connected.
     std::size_t get_player_count() {
       lock_guard<mutex> guard(m_connection_lock);
       return m_connection_ids.size();
     }
+
+    /**
+     * Submits an action to the queue m_actions to send the text msg to the
+     * client associated with id.
+     */
 
     void send_message(const combined_id& id, std::string&& msg) {
       connection_hdl hdl;
@@ -403,6 +486,14 @@ namespace jwt_game_server {
           );
       }
     }
+
+    /**
+     * Closes all clients associated with the given session id and sends each
+     * a result string constructed with m_get_result_str. Stores sid and the
+     * associated data in m_locked_sessions for m_session_release_time
+     * milliseconds so clients connecting with the same session id are
+     * sent the result string.
+     */
 
     void complete_session(
         const session_id& sid,

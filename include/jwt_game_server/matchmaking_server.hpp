@@ -15,6 +15,11 @@ namespace jwt_game_server {
   // datatype implementations
   using std::unordered_set;
 
+  /**
+   * A wrapper class around jwt_game_server::base_server that performs
+   * matchmaking between connected clients.
+   */
+
   template<typename matchmaker, typename jwt_clock, typename json_traits,
     typename server_config, typename close_reasons = default_close_reasons>
   class matchmaking_server {
@@ -42,6 +47,10 @@ namespace jwt_game_server {
 
     using ssl_context_ptr = typename jwt_base_server::ssl_context_ptr;
 
+    /**
+     * The data associated to a connecting or disconnecting client.
+     */
+
     struct connection_update {
       connection_update(const combined_id& i) : id(i),
         disconnection(true) {}
@@ -55,6 +64,11 @@ namespace jwt_game_server {
 
   // main class body
   public:
+    /**
+     * The constructor for the matchmaking_server class. The parameters are
+     * simply used to construct the underlying base_server member m_jwt_server.
+     */
+
     matchmaking_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f,
@@ -86,28 +100,37 @@ namespace jwt_game_server {
         );
     }
 
+    /**
+     * Constructs the base_server member m_jwt_server with a default time-step.
+     */
+
     matchmaking_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f
       ) : matchmaking_server{v, f, 3600s} {}
 
+    /// Sets the tls_init_handler for the base_server member m_jwt_server.
     void set_tls_init_handler(function<ssl_context_ptr(connection_hdl)> f) {
       m_jwt_server.set_tls_init_handler(f);
     }
 
+    /// Runs the base_server member m_jwt_server.
     void run(uint16_t port, bool unlock_address = false) {
       m_jwt_server.run(port, unlock_address);
     }
 
+    /// Runs the process_messages loop on the base_server member m_jwt_server.
     void process_messages() {
       m_jwt_server.process_messages();
     }
 
+    /// Stops, clears, and resets the server so it may be run again.
     void reset() {
       stop();
       m_jwt_server.reset();
     }
 
+    /// Stops the server and clears all data and connections.
     void stop() {
       m_jwt_server.stop();
       {
@@ -119,6 +142,7 @@ namespace jwt_game_server {
       m_match_condition.notify_one();
     }
 
+    /// Returns the number of verified clients connected.
     std::size_t get_player_count() {
       return m_jwt_server.get_player_count();
     }
@@ -126,6 +150,12 @@ namespace jwt_game_server {
     bool is_running() {
       return m_jwt_server.is_running();
     }
+
+    /**
+     * Loop to process player connections and disconnections, match connected
+     * players together, and send any associated
+     * messages. Should only be called by one thread.
+     */
 
     void match_players(std::chrono::milliseconds timestep) {
       auto time_start = clock::now();

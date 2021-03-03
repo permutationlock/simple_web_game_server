@@ -11,6 +11,11 @@ namespace jwt_game_server {
   // time literals to initialize timestep variables
   using namespace std::chrono_literals;
 
+  /**
+   * A wrapper class around jwt_game_server::base_server that runs game
+   * sessions for connected clients.
+   */
+
   template<typename game_instance, typename jwt_clock, typename json_traits,
     typename server_config, typename close_reasons = default_close_reasons>
   class game_server {
@@ -36,6 +41,10 @@ namespace jwt_game_server {
 
     using ssl_context_ptr = typename jwt_base_server::ssl_context_ptr;
 
+    /**
+     * The data associated to a connecting or disconnecting client.
+     */
+
     struct connection_update {
       connection_update(const combined_id& i) : id(i), disconnection(true) {}
       connection_update(const combined_id& i, json&& d) : id(i),
@@ -48,6 +57,11 @@ namespace jwt_game_server {
 
   // main class body
   public:
+    /**
+     * The constructor for the game_server class. The parameters are
+     * simply used to construct the underlying base_server member m_jwt_server.
+     */
+
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f,
@@ -79,28 +93,38 @@ namespace jwt_game_server {
         );
     }
 
+    /**
+     * Constructs the base_server member m_jwt_server with a default time-step.
+     */
+
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f
       ) : game_server(v, f, 3600s) {}
 
+
+    /// Sets the tls_init_handler for the base_server member m_jwt_server.
     void set_tls_init_handler(function<ssl_context_ptr(connection_hdl)> f) {
       m_jwt_server.set_tls_init_handler(f);
     }
 
+    /// Runs the base_server member m_jwt_server.
     void run(uint16_t port, bool unlock_address = false) {
       m_jwt_server.run(port, unlock_address);
     }
 
+    /// Runs the process_messages loop on the base_server member m_jwt_server.
     void process_messages() {
       m_jwt_server.process_messages();
     }
 
+    /// Stops, clears, and resets the server so it may be run again.
     void reset() {
       stop();
       m_jwt_server.reset();
     }
 
+    /// Stops the server and clears all data and connections.
     void stop() {
       m_jwt_server.stop();
 
@@ -120,6 +144,7 @@ namespace jwt_game_server {
       m_game_condition.notify_one();
     }
 
+    /// Returns the number of verified clients connected.
     std::size_t get_player_count() {
       return m_jwt_server.get_player_count();
     }
@@ -127,6 +152,14 @@ namespace jwt_game_server {
     bool is_running() {
       return m_jwt_server.is_running();
     }
+
+    /**
+     * Loop to process player connections and disconnections, execute the
+     * game loop for all running games, and send all associated messages.
+     * Should only be called by one thread
+     * (but note that the game loops are marked to be run in parallel if
+     * possible).
+     */
 
     void update_games(std::chrono::milliseconds timestep) {
       auto time_start = clock::now();
@@ -197,6 +230,7 @@ namespace jwt_game_server {
       }
     }
 
+    /// Returns the number of running game sessions.
     std::size_t get_game_count() {
       lock_guard<mutex> guard(m_game_list_lock);
       return m_games.size();
@@ -212,12 +246,16 @@ namespace jwt_game_server {
 
       for(connection_update& update : connection_updates) {
         auto games_it = m_games.find(update.id.session);
+        auto out_messages_it = m_out_messages.find(update.id.session);
+
         if(update.disconnection) {
           if(games_it != m_games.end()) {
-            games_it->second.disconnect(update.id.player);
+            games_it->second.disconnect(
+                out_messages_it->second,
+                update.id.player
+              );
           }
         } else {
-          auto out_messages_it = m_out_messages.find(update.id.session);
           if(games_it == m_games.end()) {
             game_instance game{update.data};
 

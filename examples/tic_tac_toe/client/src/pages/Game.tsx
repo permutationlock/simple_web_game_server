@@ -1,7 +1,10 @@
 import React from 'react';
 import './Game.css';
-import { TicTacToe, GameData, parseUpdate } from '../components/TicTacToe';
+import { TicTacToe, GameData, parseUpdate, updateGame }
+  from '../components/TicTacToe';
 import { RouteComponentProps } from 'react-router-dom';
+
+const TIMESTEP = 10;
 
 var closeReasons = new Set([
     "INVALID_TOKEN",
@@ -13,6 +16,7 @@ var closeReasons = new Set([
 type GameState = {
   socket: WebSocket | null,
   done: boolean,
+  updateInterval: NodeJS.Timer | null,
   gameData: GameData
 };
 
@@ -26,6 +30,7 @@ class Game extends React.Component<GameProps, GameState> {
     this.state = {
       socket: null,
       done: false,
+      updateInterval: null,
       gameData: new GameData(),
     };
 
@@ -58,6 +63,25 @@ class Game extends React.Component<GameProps, GameState> {
               socket: ws,
               done: false
             });
+
+          if(this.updateInterval === null) {
+            let updateTimer = () => {
+              if(this.state.done) {
+                this.finish();
+                clearInterval(this.state.updateInterval);
+                this.setState({ updateInterval: null });
+              } else {
+                this.setState({
+                    gameData: updateGame(this.state.gameData)
+                  });
+              }
+            };
+
+            this.setState({
+                updateInterval:
+                  setInterval(updateTimer(this.state.gameData, TIMESTEP))
+              });
+          }
         }
       };
 
@@ -66,9 +90,6 @@ class Game extends React.Component<GameProps, GameState> {
         this.setState({
             gameData: parseUpdate(this.state.gameData, e.data),
           });
-        if(this.state.gameData.token !== null) {
-          this.finish();
-        }
       };
 
       ws.onclose = (e) => {
@@ -90,21 +111,8 @@ class Game extends React.Component<GameProps, GameState> {
     }
   }
 
-  move(newGameData: GameData, updateText : string): void {
-    if(this.state.socket != null) {
-      this.setState({ gameData: newGameData });
-      this.state.socket.send(updateText);
-    }
-  }
-
-  localUpdate(newGameData: GameData): void {
-    this.setState({ gameData: newGameData });
-  }
-
   finish(): void {
-    if(!this.state.done) {
-      this.setState({ done: true });
-
+    if(this.state.gameData.token != null) {
       const submitUri = "https://localhost:9092/submit/"
         + this.state.gameData.token;
       fetch(submitUri)
@@ -115,13 +123,19 @@ class Game extends React.Component<GameProps, GameState> {
     }
   }
 
+  move(newGameData: GameData, updateText : string): void {
+    if(this.state.socket != null) {
+      this.setState({ gameData: newGameData });
+      this.state.socket.send(updateText);
+    }
+  }
+
   render() {
     return (
       <div className="Game">
         <TicTacToe
           gameData={this.state.gameData}
           move={this.move}
-          localUpdate={this.localUpdate}
           connected={this.state.socket != null}
         />
       </div>

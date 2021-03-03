@@ -49,6 +49,16 @@ function parseUpdate(gameData: GameData, text: string): GameData {
   return newGameData;
 }
 
+function updateGame(gameData: GameData): GameData {
+  let newGameData = this.props.gameData;
+  if(gameData.your_turn) {
+    newGameData.time = newGameData.time - 10;
+  } else {
+    newGameData.opponent_time = newGameData.opponent_time - 10;
+  }
+  return newGameData;
+}
+
 type SquareProps = {
   value: number,
   disabled: boolean,
@@ -118,40 +128,10 @@ type TicTacToeState = {};
 type TicTacToeProps = { 
   gameData : GameData,
   move : (g: GameData, s: string) => void,
-  localUpdate : (g: GameData) => void,
   connected: boolean
 };
 
 class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
-  updateInterval: NodeJS.Timer | null;
-
-  constructor(props: TicTacToeProps) {
-    super(props);
-
-    this.updateInterval = null;
-  }
-
-  componentDidMount() {
-    if(this.updateInterval === null) {
-      let updateTimer = () => {
-        if(this.props.gameData.done) {
-          if(this.updateInterval != null) {
-            clearInterval(this.updateInterval);
-          }
-        }
-
-        let newGameData = this.props.gameData;
-        if(this.props.gameData.your_turn) {
-          newGameData.time = newGameData.time - 10;
-        } else {
-          newGameData.opponent_time = newGameData.opponent_time - 10;
-        }
-        this.props.localUpdate(newGameData);
-      };
-      this.updateInterval = setInterval(updateTimer.bind(this), 10);
-    }
-  }
-
   onClick(square : number) {
     if(this.props.gameData.board[square] === 0 &&
       this.props.gameData.your_turn)

@@ -25,15 +25,15 @@ algorithm; see examples below.
 The base server class wraps a
 [WebSocket++](https://github.com/zaphoyd/websocketpp) server and provides JWT
 authentication as well as player and session identification for clients.
-A player id is an identifier unique to each player while session id is unique
+A player id is an identifier unique to each player while a session id is unique
 to a particular session of interaction with the server.
 
-Once the first client with a given session id connects and provides a verified
-JWT, the session is started. Each
+When the first client with a given session id connects and provides a verified
+JWT, a session is started. Each
 session persists until it is ended by the server, at which point a result
 token string is sent back to all participating clients.
-Sessions that have ended are archived for a period of
-time to allow clients with valid JWTs to retrieve the result token; this allows
+Completed sessions are archived for a period of
+time to allow clients to retrieve the result token; this allows
 disconnected players to reconnect and see the result of a game for example.
 
 In a game server a session represents a particular

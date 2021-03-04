@@ -6,7 +6,7 @@
 #define DISABLE_PICOJSON
 #include <jwt-cpp/jwt.h>
 
-#include <jwt_game_server/matchmaking_server.hpp>
+#include <simple_web_game_server/matchmaking_server.hpp>
 #include <json_traits/nlohmann_traits.hpp>
 #include <websocketpp_configs/asio_tls_no_logs.hpp>
 
@@ -16,7 +16,7 @@ using namespace std::chrono_literals;
 using claim = jwt::basic_claim<nlohmann_traits>;
 using combined_id = tic_tac_toe_player_traits::id;
 
-using ttt_server = jwt_game_server::matchmaking_server<
+using ttt_server = simple_web_game_server::matchmaking_server<
     tic_tac_toe_matchmaker,
     jwt::default_clock, nlohmann_traits,
     asio_tls_no_logs

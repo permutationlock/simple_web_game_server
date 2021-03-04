@@ -27,7 +27,7 @@
  * Namespace for the JWT Game Server library
  */
 
-namespace jwt_game_server {
+namespace simple_web_game_server {
   using websocketpp::connection_hdl; ///< The type for a connection handle in a websocketpp server.
 
   // datatype implementations
@@ -233,12 +233,12 @@ namespace jwt_game_server {
       m_server.init_asio();
 
       m_server.set_open_handler(bind(&base_server::on_open, this,
-        jwt_game_server::_1));
+        simple_web_game_server::_1));
       m_server.set_close_handler(bind(&base_server::on_close, this,
-        jwt_game_server::_1));
+        simple_web_game_server::_1));
       m_server.set_message_handler(
-          bind(&base_server::on_message, this, jwt_game_server::_1,
-            jwt_game_server::_2)
+          bind(&base_server::on_message, this, simple_web_game_server::_1,
+            simple_web_game_server::_2)
         );
     }
 

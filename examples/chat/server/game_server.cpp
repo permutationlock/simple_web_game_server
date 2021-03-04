@@ -5,14 +5,14 @@
 #define DISABLE_PICOJSON
 #include <jwt-cpp/jwt.h>
 
-#include <jwt_game_server/game_server.hpp>
+#include <simple_web_game_server/game_server.hpp>
 #include <json_traits/nlohmann_traits.hpp>
 #include <websocketpp_configs/asio_no_logs.hpp>
 
 #include "chat_game.hpp"
 
 using namespace std::chrono_literals;
-using ttt_server = jwt_game_server::game_server<
+using ttt_server = simple_web_game_server::game_server<
     chat_game,
     jwt::default_clock, nlohmann_traits,
     asio_no_logs

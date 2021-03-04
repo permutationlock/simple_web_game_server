@@ -7,7 +7,6 @@
 
 #include "test_game.hpp"
 
-
 TEST_CASE(
     "games should not be valid when constructed from json {\"matched\":false}"
   )

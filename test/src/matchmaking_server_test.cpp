@@ -6,8 +6,8 @@
 #define DISABLE_PICOJSON
 #include <jwt-cpp/jwt.h>
 
-#include <jwt_game_server/matchmaking_server.hpp>
-#include <jwt_game_server/client.hpp>
+#include <simple_web_game_server/matchmaking_server.hpp>
+#include <simple_web_game_server/client.hpp>
 #include <json_traits/nlohmann_traits.hpp>
 
 #include <websocketpp_configs/asio_no_logs.hpp>
@@ -47,11 +47,11 @@ void create_matchmaker_tokens(
 TEST_CASE("players should interact with the server with no errors") {
   using namespace std::chrono_literals;
 
-  using test_client = jwt_game_server::client<
+  using test_client = simple_web_game_server::client<
       asio_client_no_logs
     >;
 
-  using test_matchmaking_server = jwt_game_server::matchmaking_server<
+  using test_matchmaking_server = simple_web_game_server::matchmaking_server<
       test_matchmaker,
       jwt::default_clock,
       nlohmann_traits,

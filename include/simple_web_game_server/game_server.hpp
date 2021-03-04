@@ -7,12 +7,12 @@
 #include <algorithm>
 #include <execution>
 
-namespace jwt_game_server {
+namespace simple_web_game_server {
   // time literals to initialize timestep variables
   using namespace std::chrono_literals;
 
   /**
-   * A wrapper class around jwt_game_server::base_server that runs game
+   * A wrapper class around simple_web_game_server::base_server that runs game
    * sessions for connected clients.
    */
 
@@ -72,23 +72,23 @@ namespace jwt_game_server {
           bind(
             &game_server::player_connect,
             this,
-            jwt_game_server::_1,
-            jwt_game_server::_2
+            simple_web_game_server::_1,
+            simple_web_game_server::_2
           )
         );
       m_jwt_server.set_close_handler(
           bind(
             &game_server::player_disconnect,
             this,
-            jwt_game_server::_1
+            simple_web_game_server::_1
           )
         );
       m_jwt_server.set_message_handler(
           bind(
             &game_server::process_message,
             this,
-            jwt_game_server::_1,
-            jwt_game_server::_2
+            simple_web_game_server::_1,
+            simple_web_game_server::_2
           )
         );
     }

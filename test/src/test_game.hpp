@@ -75,11 +75,11 @@ public:
     }
   }
   
-  void connect(vector<message>& out_msg_lsit, player_id id) {
+  void connect(vector<message>& out_msg_list, player_id id) {
     m_player_list.insert(id);
   }
 
-  void disconnect(player_id id) {
+  void disconnect(vector<message>& out_msg_list, player_id id) {
     m_player_list.erase(id);
   }
 

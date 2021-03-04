@@ -6,7 +6,7 @@
 #define DISABLE_PICOJSON
 #include <jwt-cpp/jwt.h>
 
-#include <jwt_game_server/client.hpp>
+#include <simple_web_game_server/client.hpp>
 #include <model_games/minimal_game.hpp>
 
 #include <websocketpp/server.hpp>
@@ -32,7 +32,7 @@ TEST_CASE("the base client should interact with a websocket server") {
   using std::placeholders::_1;
   using std::placeholders::_2;
 
-  using ws_client = jwt_game_server::client<
+  using ws_client = simple_web_game_server::client<
       asio_client_no_logs
     >;
 

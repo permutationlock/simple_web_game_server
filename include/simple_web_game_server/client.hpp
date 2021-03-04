@@ -12,7 +12,7 @@
 
 #include <exception>
 
-namespace jwt_game_server {
+namespace simple_web_game_server {
   // websocketpp types
   using websocketpp::connection_hdl;
 
@@ -52,12 +52,12 @@ namespace jwt_game_server {
       m_client.init_asio();
 
       m_client.set_open_handler(bind(&client::on_open, this,
-        jwt_game_server::_1));
+        simple_web_game_server::_1));
       m_client.set_close_handler(bind(&client::on_close, this,
-        jwt_game_server::_1));
+        simple_web_game_server::_1));
       m_client.set_message_handler(
-          bind(&client::on_message, this, jwt_game_server::_1,
-            jwt_game_server::_2)
+          bind(&client::on_message, this, simple_web_game_server::_1,
+            simple_web_game_server::_2)
         );
     }
 
@@ -72,12 +72,12 @@ namespace jwt_game_server {
       m_client.init_asio();
 
       m_client.set_open_handler(bind(&client::on_open, this,
-        jwt_game_server::_1));
+        simple_web_game_server::_1));
       m_client.set_close_handler(bind(&client::on_close, this,
-        jwt_game_server::_1));
+        simple_web_game_server::_1));
       m_client.set_message_handler(
-          bind(&client::on_message, this, jwt_game_server::_1,
-            jwt_game_server::_2)
+          bind(&client::on_message, this, simple_web_game_server::_1,
+            simple_web_game_server::_2)
         );
     }
 

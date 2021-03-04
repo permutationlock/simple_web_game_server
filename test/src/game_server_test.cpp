@@ -6,8 +6,8 @@
 #define DISABLE_PICOJSON
 #include <jwt-cpp/jwt.h>
 
-#include <jwt_game_server/game_server.hpp>
-#include <jwt_game_server/client.hpp>
+#include <simple_web_game_server/game_server.hpp>
+#include <simple_web_game_server/client.hpp>
 #include <json_traits/nlohmann_traits.hpp>
 
 #include <websocketpp_configs/asio_no_logs.hpp>
@@ -62,11 +62,11 @@ void create_game_tokens(
 TEST_CASE("players should interact with the server with no errors") {
   using namespace std::chrono_literals;
 
-  using game_client = jwt_game_server::client<
+  using game_client = simple_web_game_server::client<
       asio_client_no_logs
     >;
 
-  using game_server = jwt_game_server::game_server<
+  using game_server = simple_web_game_server::game_server<
       test_game,
       jwt::default_clock,
       nlohmann_traits,

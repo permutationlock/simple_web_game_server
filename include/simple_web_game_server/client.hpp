@@ -27,6 +27,7 @@ namespace simple_web_game_server {
   using std::mutex;
   using std::lock_guard;
 
+  /// A simple WebSocket client to connect to an instance of base_server.
   template<typename client_config>
   class client {
   // type definitions
@@ -45,6 +46,7 @@ namespace simple_web_game_server {
 
   // main class body
   public:
+    /// Constructs the client with empty handler functions.
     client() : m_is_running{false}, m_has_failed{false},
       m_handle_open{[](){}}, m_handle_close{[](){}},
       m_handle_message{[](const std::string& s){}}
@@ -61,6 +63,7 @@ namespace simple_web_game_server {
         );
     }
 
+    /// Constructs the client with the given handler functions.
     client(
         std::function<void()> of,
         std::function<void()> cf,
@@ -81,9 +84,7 @@ namespace simple_web_game_server {
         );
     }
 
-    client(const client& c) :
-      client{c.m_handle_open, c.m_handle_close, c.m_handle_message} {}
-
+    /// Connects to a server at the given URI and sends the given string.
     void connect(const std::string& uri, const std::string& jwt) {
       if(m_is_running) {
         throw client_error("connect called on running client");
@@ -110,14 +111,17 @@ namespace simple_web_game_server {
       }
     }
 
+    /// Returns whether the underlying WebSocket client is running.
     bool is_running() {
       return m_is_running;
     }
 
+    /// Returns whether the connection has failed.
     bool has_failed() {
       return m_has_failed;
     }
 
+    /// Close the connection to the server.
     void disconnect() {
       if(m_is_running) {
         try {
@@ -134,6 +138,7 @@ namespace simple_web_game_server {
       }
     }
 
+    /// Resets the client so it may connect to a new server.
     void reset() {
       if(m_is_running) {
         this->disconnect();
@@ -141,6 +146,7 @@ namespace simple_web_game_server {
       m_client.reset();
     }
 
+    /// Synchronously send the given string to the server.
     void send(const std::string& msg) {
       if(m_is_running) {
         try {
@@ -161,6 +167,7 @@ namespace simple_web_game_server {
       }
     }
 
+    /// Sets the given function to be called when the client connects.
     void set_open_handler(std::function<void()> f) {
       if(!m_is_running) {
         m_handle_open = f;
@@ -169,6 +176,7 @@ namespace simple_web_game_server {
       }
     }
 
+    /// Sets the given function to be called when the client disconnects.
     void set_close_handler(std::function<void()> f) {
       if(!m_is_running) {
         m_handle_close = f;
@@ -177,6 +185,7 @@ namespace simple_web_game_server {
       }
     }
 
+    /// Sets the given function to be called when the client gets a message.
     void set_message_handler(std::function<void(const std::string&)> f) {
       if(!m_is_running) {
         m_handle_message = f;

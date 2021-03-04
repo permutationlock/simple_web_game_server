@@ -15,11 +15,11 @@ namespace simple_web_game_server {
   // datatype implementations
   using std::unordered_set;
 
+  /// A matchmaking server built on the base_server class.
   /**
-   * A wrapper class around simple_web_game_server::base_server that performs
-   * matchmaking between connected clients.
+   * This class wraps simple_web_game_server::base_server m_jwt_base_server
+   * and performs matchmaking between connected client sessions.
    */
-
   template<typename matchmaker, typename jwt_clock, typename json_traits,
     typename server_config, typename close_reasons = default_close_reasons>
   class matchmaking_server {
@@ -47,10 +47,7 @@ namespace simple_web_game_server {
 
     using ssl_context_ptr = typename jwt_base_server::ssl_context_ptr;
 
-    /**
-     * The data associated to a connecting or disconnecting client.
-     */
-
+    /// The data associated to a connecting or disconnecting client.
     struct connection_update {
       connection_update(const combined_id& i) : id(i),
         disconnection(true) {}
@@ -64,11 +61,11 @@ namespace simple_web_game_server {
 
   // main class body
   public:
+    /// The constructor for the matchmaking_server class.
     /**
-     * The constructor for the matchmaking_server class. The parameters are
+     * The parameters are
      * simply used to construct the underlying base_server member m_jwt_server.
      */
-
     matchmaking_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f,
@@ -100,10 +97,7 @@ namespace simple_web_game_server {
         );
     }
 
-    /**
-     * Constructs the base_server member m_jwt_server with a default time-step.
-     */
-
+    /// Constructs the base_server member m_jwt_server with a default time-step.
     matchmaking_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f
@@ -151,10 +145,11 @@ namespace simple_web_game_server {
       return m_jwt_server.is_running();
     }
 
+    /// Loop to match players.
     /**
-     * Loop to process player connections and disconnections, match connected
-     * players together, and send any associated
-     * messages. Should only be called by one thread.
+     * Processes client connections and disconnections and matches connected
+     * client sessions together. It may also send out any messages broadcast by
+     * the matchmaking function. Should only be called by one thread.
      */
 
     void match_players(std::chrono::milliseconds timestep) {

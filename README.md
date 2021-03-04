@@ -5,6 +5,8 @@ and matchmaking servers for browser games using WebSockets and JWT
 authentication. It is built
 upon the [WebSocket++](https://github.com/zaphoyd/websocketpp) and
 [JWT++](https://github.com/Thalhammer/jwt-cpp) libraries.
+[Doxygen](https://www.doxygen.nl/index.html) documentation is available
+[here](https://permutationlock.com/simple_web_game_server/).
 
 In order to create a backend for your game all you need to write is a
 specification for the JWTs you want to verify, a

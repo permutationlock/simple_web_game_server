@@ -11,11 +11,11 @@ namespace simple_web_game_server {
   // time literals to initialize timestep variables
   using namespace std::chrono_literals;
 
+  /// A matchmaking server built on the base_server class.
   /**
-   * A wrapper class around simple_web_game_server::base_server that runs game
-   * sessions for connected clients.
+   * This class wraps simple_web_game_server::base_server m_jwt_base_server
+   * that runs game sessions for connected clients.
    */
-
   template<typename game_instance, typename jwt_clock, typename json_traits,
     typename server_config, typename close_reasons = default_close_reasons>
   class game_server {
@@ -41,10 +41,7 @@ namespace simple_web_game_server {
 
     using ssl_context_ptr = typename jwt_base_server::ssl_context_ptr;
 
-    /**
-     * The data associated to a connecting or disconnecting client.
-     */
-
+    // The data associated to a connecting or disconnecting client.
     struct connection_update {
       connection_update(const combined_id& i) : id(i), disconnection(true) {}
       connection_update(const combined_id& i, json&& d) : id(i),
@@ -57,11 +54,11 @@ namespace simple_web_game_server {
 
   // main class body
   public:
+    ///The constructor for the game_server class.
     /**
-     * The constructor for the game_server class. The parameters are
-     * simply used to construct the underlying base_server member m_jwt_server.
+     * The parameters are simply used to construct the underlying base_server
+     * member m_jwt_server.
      */
-
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f,
@@ -93,10 +90,7 @@ namespace simple_web_game_server {
         );
     }
 
-    /**
-     * Constructs the base_server member m_jwt_server with a default time-step.
-     */
-
+    /// Constructs the base_server member m_jwt_server with a default time-step.
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f
@@ -153,14 +147,14 @@ namespace simple_web_game_server {
       return m_jwt_server.is_running();
     }
 
+    /// Loop to run games.
     /**
-     * Loop to process player connections and disconnections, execute the
-     * game loop for all running games, and send all associated messages.
+     * Processes player connections and disconnections, executes the
+     * game loop for all running games, and sends all associated messages.
      * Should only be called by one thread
      * (but note that the game loops are marked to be run in parallel if
      * possible).
      */
-
     void update_games(std::chrono::milliseconds timestep) {
       auto time_start = clock::now();
       vector<session_id> finished_games;

@@ -28,7 +28,8 @@
  */
 
 namespace simple_web_game_server {
-  using websocketpp::connection_hdl; ///< The type for a connection handle in a websocketpp server.
+  /// The type for a connection handle in a websocketpp server.
+  using websocketpp::connection_hdl;
 
   // datatype implementations
   using std::vector;
@@ -51,11 +52,7 @@ namespace simple_web_game_server {
   using std::unique_lock;
   using std::condition_variable;
 
-  /**
-   * A struct defining default close message strings for the various reasons a
-   * server might close a client connection.
-   */
-
+  /// A struct defining default close message strings.
   struct default_close_reasons {
     static inline std::string invalid_jwt() {
       return "INVALID_TOKEN";
@@ -71,10 +68,11 @@ namespace simple_web_game_server {
     };
   };
 
+  
+  /// A WebSocket server that performs authentication and manages sessions.
+
   /**
-   * A wrapper class around a websocketpp::server that performs client
-   * authentication with a JWT verifier and manages client sessions.
-   *
+   * This class wraps an underlying websocketpp::server m_server.
    * The player_traits template parameter
    * must define a struct plyaer_traits::id with members id.player, id.session
    * of types id::player_id, id::session_id respectively. The id::hash struct
@@ -211,8 +209,10 @@ namespace simple_web_game_server {
 
   // main class body
   public:
+    /// The constructor for the base_server class.
+
     /**
-     * The constructor for the base_server class. Takes a jwt::verifier v to
+     * Takes a jwt::verifier v to
      * authenticate client tokens, a function f to construct result tokens for
      * each complete session, and the length of time in milliseconds t that
      * complete session data should remain in memory. It is recommend that the
@@ -242,10 +242,7 @@ namespace simple_web_game_server {
         );
     }
 
-    /**
-     * Sets a the given function f as the tls_init_handler for m_server.
-     */
-
+    /// Sets a the given function f as the tls_init_handler for m_server.
     void set_tls_init_handler(function<ssl_context_ptr(connection_hdl)> f) {
       if(!m_is_running) {
         m_server.set_tls_init_handler(f);
@@ -254,11 +251,7 @@ namespace simple_web_game_server {
       }
     }
 
-    /**
-     * Sets the given function to be called whenever a client connects and
-     * submits a verified JWT.
-     */
-
+    /// Sets the given function to be called when a client sends a valid JWT.
     void set_open_handler(function<void(const combined_id&,json&&)> f) {
       if(!m_is_running) {
         m_handle_open = f;
@@ -267,11 +260,7 @@ namespace simple_web_game_server {
       }
     }
 
-    /**
-     * Sets the given function to be called whenever a verified client
-     * disconnects.
-     */
-
+    /// Sets the given function to be called when a client disconnects.
     void set_close_handler(function<void(const combined_id&)> f) {
       if(!m_is_running) {
         m_handle_close = f;
@@ -280,11 +269,7 @@ namespace simple_web_game_server {
       }
     }
 
-    /**
-     * Sets the given function to be called whenever a verified client sends a
-     * message.
-     */
-
+    /// Sets the given function to be called when a client sends a message.
     void set_message_handler(function<void(const combined_id&,std::string&&)> f) {
       if(!m_is_running) {
         m_handle_message = f;
@@ -293,9 +278,11 @@ namespace simple_web_game_server {
       }
     }
 
-    /*
-     * Runs the underlying websocketpp server m_server. May be called with
-     * multiple threads so long as  unlock_address is true.
+    /// Runs the underlying websocketpp server m_server.
+
+    /**
+     * May be called by multiple threads if desired, so long as unlock_address
+     * is true.
      */
 
     void run(uint16_t port, bool unlock_address) {
@@ -311,6 +298,7 @@ namespace simple_web_game_server {
       m_server.run();
     }
 
+    /// Returns whether the underlying WebSocket++ server is running
     bool is_running() {
       return m_is_running;
     }
@@ -365,9 +353,11 @@ namespace simple_web_game_server {
       }
     }
 
+    /// Worker loop that processes server actions.
+
     /**
-     * Worker loop that process action from the queue m_actions. May be called
-     * by multiple threads.
+     * Continually pulls work from the queue m_actions.
+     * May be run by multiple threads if desired.
      */
 
     void process_messages() {
@@ -463,6 +453,8 @@ namespace simple_web_game_server {
       return m_connection_ids.size();
     }
 
+    /// Asynchronously sends a message to the given client.
+
     /**
      * Submits an action to the queue m_actions to send the text msg to the
      * client associated with id.
@@ -487,12 +479,16 @@ namespace simple_web_game_server {
       }
     }
 
+    /// Asynchronously closes the given session and sends out result tokens.
+
     /**
-     * Closes all clients associated with the given session id and sends each
-     * a result string constructed with m_get_result_str. Stores sid and the
+     * Submits actions to close all clients associated with the given session
+     * id and send each
+     * a result string constructed with m_get_result_str, the function provided
+     * via the constructor. Stores sid and the
      * associated data in m_locked_sessions for m_session_release_time
      * milliseconds so clients connecting with the same session id are
-     * sent the result string.
+     * sent the same result string.
      */
 
     void complete_session(

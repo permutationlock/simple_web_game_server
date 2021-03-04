@@ -70,7 +70,6 @@ namespace simple_web_game_server {
 
   
   /// A WebSocket server that performs authentication and manages sessions.
-
   /**
    * This class wraps an underlying websocketpp::server m_server.
    * The player_traits template parameter
@@ -82,7 +81,6 @@ namespace simple_web_game_server {
    * The jwt_clock and json_traits parameters must meet the requirements of
    * such template types in JWT++ library.
    */
-
   template<typename player_traits, typename jwt_clock, typename json_traits,
     typename server_config, typename close_reasons>
   class base_server {
@@ -162,7 +160,6 @@ namespace simple_web_game_server {
      * used in practice to ensure that session data is kept in memory for at
      * least one time-step and at most two time-steps.
      */
-
     template<typename map_type>
     class buffered_map {
     public:
@@ -210,7 +207,6 @@ namespace simple_web_game_server {
   // main class body
   public:
     /// The constructor for the base_server class.
-
     /**
      * Takes a jwt::verifier v to
      * authenticate client tokens, a function f to construct result tokens for
@@ -219,7 +215,6 @@ namespace simple_web_game_server {
      * time t should always be at least as long as the time it takes for any
      * issued JWT that can be verified with v to expire.
      */
-
     base_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f,
@@ -279,12 +274,10 @@ namespace simple_web_game_server {
     }
 
     /// Runs the underlying websocketpp server m_server.
-
     /**
      * May be called by multiple threads if desired, so long as unlock_address
      * is true.
      */
-
     void run(uint16_t port, bool unlock_address) {
       if(!m_is_running) {
         spdlog::info("server is listening on port {}", port);
@@ -354,12 +347,10 @@ namespace simple_web_game_server {
     }
 
     /// Worker loop that processes server actions.
-
     /**
      * Continually pulls work from the queue m_actions.
      * May be run by multiple threads if desired.
      */
-
     void process_messages() {
       while(m_is_running) {
         unique_lock<mutex> action_lock(m_action_lock);
@@ -454,12 +445,10 @@ namespace simple_web_game_server {
     }
 
     /// Asynchronously sends a message to the given client.
-
     /**
      * Submits an action to the queue m_actions to send the text msg to the
      * client associated with id.
      */
-
     void send_message(const combined_id& id, std::string&& msg) {
       connection_hdl hdl;
       if(get_connection_hdl_from_id(hdl, id)) {
@@ -480,7 +469,6 @@ namespace simple_web_game_server {
     }
 
     /// Asynchronously closes the given session and sends out result tokens.
-
     /**
      * Submits actions to close all clients associated with the given session
      * id and send each
@@ -490,7 +478,6 @@ namespace simple_web_game_server {
      * milliseconds so clients connecting with the same session id are
      * sent the same result string.
      */
-
     void complete_session(
         const session_id& sid,
         const session_id& result_sid,

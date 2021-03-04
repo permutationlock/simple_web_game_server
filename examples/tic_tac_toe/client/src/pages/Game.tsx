@@ -37,7 +37,6 @@ class Game extends React.Component<GameProps, GameState> {
     this.connect = this.connect.bind(this);
     this.move = this.move.bind(this);
     this.finish = this.finish.bind(this);
-    this.localUpdate = this.localUpdate.bind(this);
   }
 
   componentDidMount() {
@@ -64,12 +63,14 @@ class Game extends React.Component<GameProps, GameState> {
               done: false
             });
 
-          if(this.updateInterval === null) {
+          if(this.state.updateInterval === null) {
             let updateTimer = () => {
               if(this.state.done) {
                 this.finish();
-                clearInterval(this.state.updateInterval);
-                this.setState({ updateInterval: null });
+                if(this.state.updateInterval !== null) {
+                  clearInterval(this.state.updateInterval);
+                  this.setState({ updateInterval: null });
+                }
               } else {
                 this.setState({
                     gameData: updateGame(this.state.gameData)
@@ -79,7 +80,7 @@ class Game extends React.Component<GameProps, GameState> {
 
             this.setState({
                 updateInterval:
-                  setInterval(updateTimer(this.state.gameData, TIMESTEP))
+                  setInterval(updateTimer, TIMESTEP)
               });
           }
         }
@@ -96,12 +97,12 @@ class Game extends React.Component<GameProps, GameState> {
         console.log("disconnected from " + ws_uri +": " + e.reason);
         this.setState({ socket: null });
 
-        if(closeReasons.has(e.reason)) {
+        if(closeReasons.has(e.reason)) { 
           // disconnect for valid reason, session over
+          console.log("closed for reason: " + e.reason);
           this.setState({
               done: true
             });
-          console.log("closed for reason: " + e.reason);
         } else {
           // disconnected for unknown reason, attempt to reconnect
           setTimeout(this.connect, 1000);

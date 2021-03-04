@@ -203,7 +203,7 @@ public:
     }
   }
 
-  void disconnect(player_id id) {
+  void disconnect(vector<message>& out_messages, player_id id) {
     m_data_map[id].is_connected = false;
   }
 
@@ -274,7 +274,6 @@ public:
   json get_state() const {
     json game_json;
     game_json["board"] = m_board.get_board();
-    game_json["players"] = m_player_list;  
     game_json["xmove"] = m_xmove;
     game_json["moves"] = m_move_list;
     game_json["times"] = std::vector<long>{ m_xtime, m_otime };

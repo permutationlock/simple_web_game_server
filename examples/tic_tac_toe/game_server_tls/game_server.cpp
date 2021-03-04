@@ -40,9 +40,9 @@ int main() {
         .set_issuer("tic_tac_toe_game_server")
         .set_payload_claim("pid", claim(id.player))
         .set_payload_claim("sid", claim(id.session))
-        .set_payload_claim("data", claim(data))
+        .set_payload_claim("data", claim(json::value_t::object))
         .sign(jwt::algorithm::hs256{"secret"});
-      json temp;
+      json temp = data;
       temp["type"] = "result";
       temp["token"] = token;
       return temp.dump();

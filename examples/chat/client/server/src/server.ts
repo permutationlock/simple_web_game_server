@@ -35,4 +35,6 @@ app.use((req, res, next) => {
 
 var httpServer = http.createServer(app);
 
+console.log("server now listening at http://localhost:" + httpPort);
+
 httpServer.listen(httpPort);

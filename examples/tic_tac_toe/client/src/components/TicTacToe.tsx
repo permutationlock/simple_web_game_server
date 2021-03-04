@@ -43,18 +43,27 @@ function parseUpdate(gameData: GameData, text: string): GameData {
   } else if(updateData["type"] === "result") {
     console.log("result token: " + updateData["token"]);
     newGameData["token"] = updateData["token"];
-    newGameData["done"] = updateData["done"];
+    newGameData["done"] = true;
+    newGameData["board"] = updateData["board"];
+    newGameData["xmove"] = updateData["xmove"];
+    newGameData["state"] = updateData["state"];
   }
 
   return newGameData;
 }
 
 function updateGame(gameData: GameData): GameData {
-  let newGameData = this.props.gameData;
+  let newGameData = gameData;
   if(gameData.your_turn) {
     newGameData.time = newGameData.time - 10;
+    if(newGameData.time < 0) {
+      newGameData.time = 0;
+    }
   } else {
     newGameData.opponent_time = newGameData.opponent_time - 10;
+    if(newGameData.opponent_time < 0) {
+      newGameData.opponent_time = 0;
+    }
   }
   return newGameData;
 }
@@ -90,11 +99,10 @@ function StatusBar(props: StatusBarProps) {
   let message="";
 
   if(props.done) {
-    let mod = props.isX ? 1 : -1;
-    if(mod * props.state > 0) {
-      message = "You win!";
-    } else  if(mod * props.state < 0) {
-      message = "You lose!";
+    if(props.state > 0) {
+      message = "X's win!";
+    } else  if(props.state < 0) {
+      message = "O's win!";
     } else {
       message = "It's a draw...";
     }
@@ -200,4 +208,4 @@ class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
   }
 };
 
-export { TicTacToe, parseUpdate, GameData };
+export { TicTacToe, parseUpdate, updateGame, GameData };

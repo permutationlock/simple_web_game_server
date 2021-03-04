@@ -42,6 +42,13 @@ class Match extends React.Component<MatchProps, MatchState> {
         this.setState({ matching: false, matched: true});
         console.log("game token: " + e.data);
         this.props.history.push("/game/" + e.data);
+      } else {
+        const cancelUri = "https://localhost:9092/cancel/" + e.data;
+        fetch(cancelUri)
+          .then(response => response.text())
+          .then((returnStr) => {
+            console.log('cancel result: ' + returnStr);
+          });
       }
     };
 

@@ -72,7 +72,7 @@ function createMatchToken(id: number) {
         iss: 'tic_tac_toe_auth',
         pid: id,
         sid: sid,
-        exp: Math.floor(Date.now() / 1000) + 60,
+        exp: Math.floor(Date.now() / 1000) + 1000,
         data: {}
       },
       secret
@@ -87,6 +87,10 @@ interface LoginToken {
   pid: number
 };
 
+function isLoginToken(token : object): token is LoginToken {
+  return ('pid' in  token);
+}
+
 app.get("/login/:token", (req, res) => {
   let loginOpts: VerifyOptions = { issuer: 'tic_tac_toe_login' };
   jsonwebtoken.verify(
@@ -94,7 +98,7 @@ app.get("/login/:token", (req, res) => {
       secret,
       loginOpts,
       (err, decoded: object | undefined) => {
-        if(decoded != undefined && (<LoginToken>decoded).pid !== undefined) {
+        if(decoded != undefined && isLoginToken(decoded)) {
           let id: number = (<LoginToken>decoded).pid;
           serverDB.findOne({ pid: id }, (err, doc) => {
             if(doc != null) {
@@ -137,6 +141,31 @@ app.get("/login/:token", (req, res) => {
     );
 });
 
+app.get("/cancel/:token", (req, res) => {
+  let opts: VerifyOptions = { issuer: 'tic_tac_toe_matchmaker' };
+  jsonwebtoken.verify(
+      req.params.token,
+      secret,
+      opts,
+      (err, decoded: object | undefined) => {
+        if(decoded != undefined && isLoginToken(decoded)) { 
+          let id: number = (<LoginToken>decoded).pid;
+          serverDB.update(
+              { pid: id },
+              { pid: id, token: "" },
+              myUpdateOpts,
+              () => {}
+            );
+          res.send({ success: true });
+        } else {
+          res.send({ success: false });
+        }
+      }
+    );
+  }
+);
+
+
 app.get("/submit/:token", (req, res) => {
   let opts: VerifyOptions = { issuer: 'tic_tac_toe_game_server' };
   jsonwebtoken.verify(
@@ -144,14 +173,24 @@ app.get("/submit/:token", (req, res) => {
       secret,
       opts,
       (err, decoded: object | undefined) => {
-        if(decoded != undefined) {
+        if(decoded != undefined && isLoginToken(decoded)) { 
+          let id: number = (<LoginToken>decoded).pid;
+
+          serverDB.update(
+              { pid: id },
+              { pid: id, token: "" },
+              myUpdateOpts,
+              () => {}
+            );
           res.send({ success: true });
+
         } else {
           res.send({ success: false });
         }
       }
     );
-});
+  }
+);
 
 app.use(express.static(path.join(__dirname, "..", "..", "build")));
 
@@ -160,5 +199,7 @@ app.use((req, res, next) => {
 });
 
 var httpsServer = https.createServer(credentials, app);
+
+console.log("listing at https://localhost:" + httpsPort);
 
 httpsServer.listen(httpsPort);

@@ -4,19 +4,15 @@
 #define MINIMAL_GAME_HPP
 
 #include <nlohmann/json.hpp>
-#include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
-#include <queue>
-#include <functional>
 
 using std::vector;
 using std::unordered_map;
 using std::unordered_set;
-using std::queue;
 
 struct minimal_player_traits {
   struct id {
@@ -62,24 +58,24 @@ public:
 
   minimal_game(const json& data) {}
   
-  void connect(player_id id) {
+  void connect(vector<message>& out_messages, player_id id) {
     m_player_list.insert(id);
   }
 
-  void disconnect(player_id id) {
+  void disconnect(vector<message>& out_messages, player_id id) {
     m_player_list.erase(id);
   }
 
   void update(
-      vector<message>& out_msg_list,
-      const vector<message>& in_msg_list,
+      vector<message>& out_messages,
+      const vector<message>& in_messages,
       long delta_time
     )
   {
-    for(const message& msg : in_msg_list) {
+    for(const message& msg : in_messages) {
       for(player_id pid : m_player_list) {
         json temp = { { "pid", msg.first }, { "message", msg.second } };
-        out_msg_list.emplace_back(pid, temp.dump());
+        out_messages.emplace_back(pid, temp.dump());
       }
     }
   }
@@ -106,6 +102,8 @@ public:
   using player_traits = minimal_player_traits;
   using session_id = player_traits::id::session_id;
   using id_hash = player_traits::id::hash;
+  using message = std::pair<session_id, std::string>;
+  using game = std::tuple<std::vector<session_id>, session_id, json>;
 
   struct session_data {
     session_data(const json& data) {}
@@ -113,18 +111,6 @@ public:
     bool is_valid() {
       return true;
     }
-  };
-
-  struct game {
-    game(const vector<session_id>& sl, session_id sid) : session_list(sl),
-      session(sid)
-    {
-      data["matched"] = true;
-    }
-
-    vector<session_id> session_list;
-    session_id session;
-    json data;
   };
 
   minimal_matchmaker() : m_sid_count(0) {}
@@ -138,6 +124,7 @@ public:
 
   void match(
       vector<game>& game_list,
+      vector<message>& out_messages,
       const unordered_map<session_id, session_data, id_hash>& session_map,
       long delta_time
     )
@@ -146,8 +133,11 @@ public:
     for(auto& spair : session_map) {
       sl.push_back(spair.first);
       if(sl.size() > 1) {
-        game_list.emplace_back(sl, m_sid_count++);
-        sl.clear();
+        game_list.emplace_back(
+            std::move(sl), 
+            m_sid_count++,
+            json{ { "matched", true } }
+          );
       }
     }
   }

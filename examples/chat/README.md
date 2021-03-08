@@ -21,3 +21,6 @@ cd server
 make
 ./game_server
 ```
+
+Once all both are running, go to **http://localhost:9092** in any
+browser to access the app.

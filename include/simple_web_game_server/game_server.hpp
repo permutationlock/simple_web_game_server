@@ -30,12 +30,12 @@
 #include <execution>
 
 namespace simple_web_game_server {
-  // time literals to initialize timestep variables
+  // time literals to initialize time-step variables
   using namespace std::chrono_literals;
 
-  /// A matchmaking server built on the base_server class.
+  /// A game server built on the base_server class.
   /**
-   * This class wraps simple_web_game_server::base_server m_jwt_base_server
+   * This class wraps base_server
    * that runs game sessions for connected clients.
    */
   template<typename game_instance, typename jwt_clock, typename json_traits,
@@ -78,8 +78,7 @@ namespace simple_web_game_server {
   public:
     ///The constructor for the game_server class.
     /**
-     * The parameters are simply used to construct the underlying base_server
-     * member m_jwt_server.
+     * The parameters are simply used to construct the underlying base_server.
      */
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
@@ -112,24 +111,24 @@ namespace simple_web_game_server {
         );
     }
 
-    /// Constructs the base_server member m_jwt_server with a default time-step.
+    /// Constructs the underlying base_server with a default time-step.
     game_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f
       ) : game_server(v, f, 3600s) {}
 
 
-    /// Sets the tls_init_handler for the base_server member m_jwt_server.
+    /// Sets the tls_init_handler for the underlying base_server.
     void set_tls_init_handler(function<ssl_context_ptr(connection_hdl)> f) {
       m_jwt_server.set_tls_init_handler(f);
     }
 
-    /// Runs the base_server member m_jwt_server.
+    /// Runs the underlying base_server.
     void run(uint16_t port, bool unlock_address = false) {
       m_jwt_server.run(port, unlock_address);
     }
 
-    /// Runs the process_messages loop on the base_server member m_jwt_server.
+    /// Runs the process_messages loop on the underlying base_server.
     void process_messages() {
       m_jwt_server.process_messages();
     }
@@ -209,7 +208,7 @@ namespace simple_web_game_server {
           process_connection_updates();
 
           // we remove game data here to catch any possible players submitting
-          // new connections in the last timestep when the game session ends
+          // new connections in the last time-step when the game session ends
           for(session_id sid : finished_games) {
             spdlog::trace("erasing game session {}", sid);
             m_out_messages.erase(sid);

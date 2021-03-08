@@ -39,7 +39,7 @@ namespace simple_web_game_server {
 
   /// A matchmaking server built on the base_server class.
   /**
-   * This class wraps simple_web_game_server::base_server m_jwt_base_server
+   * This class wraps an underlying base_server
    * and performs matchmaking between connected client sessions.
    */
   template<typename matchmaker, typename jwt_clock, typename json_traits,
@@ -86,7 +86,7 @@ namespace simple_web_game_server {
     /// The constructor for the matchmaking_server class.
     /**
      * The parameters are
-     * simply used to construct the underlying base_server member m_jwt_server.
+     * simply used to construct the underlying base_server.
      */
     matchmaking_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
@@ -119,23 +119,23 @@ namespace simple_web_game_server {
         );
     }
 
-    /// Constructs the base_server member m_jwt_server with a default time-step.
+    /// Constructs the underlying base_server with a default time-step.
     matchmaking_server(
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f
       ) : matchmaking_server{v, f, 3600s} {}
 
-    /// Sets the tls_init_handler for the base_server member m_jwt_server.
+    /// Sets the tls_init_handler for the underlying base_server.
     void set_tls_init_handler(function<ssl_context_ptr(connection_hdl)> f) {
       m_jwt_server.set_tls_init_handler(f);
     }
 
-    /// Runs the base_server member m_jwt_server.
+    /// Runs the underlying base_server.
     void run(uint16_t port, bool unlock_address = false) {
       m_jwt_server.run(port, unlock_address);
     }
 
-    /// Runs the process_messages loop on the base_server member m_jwt_server.
+    /// Runs the process_messages loop on the underlying base_server.
     void process_messages() {
       m_jwt_server.process_messages();
     }
@@ -246,7 +246,7 @@ namespace simple_web_game_server {
 
             for(session_id& sid : sessions) {
               m_jwt_server.complete_session(
-                  sid, game_sid, std::move(game_data)
+                  sid, game_sid, game_data
                 );
               finished_sessions.push_back(sid);
             }

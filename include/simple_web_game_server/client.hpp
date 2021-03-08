@@ -58,6 +58,7 @@ namespace simple_web_game_server {
     using message_ptr = typename ws_client::message_ptr;
 
   public:
+    /// The class representing errors with the client.
     class client_error : public std::runtime_error {
     public:
       using super = std::runtime_error;

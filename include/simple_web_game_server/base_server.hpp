@@ -108,10 +108,7 @@ namespace simple_web_game_server {
   class base_server {
   // type definitions
   public: 
-    /**
-     * The class representing errors with the base_server.
-     */
-
+    /// The class representing errors with the base_server.
     class server_error : public std::runtime_error {
     public:
       using super = std::runtime_error;
@@ -503,14 +500,14 @@ namespace simple_web_game_server {
     void complete_session(
         const session_id& sid,
         const session_id& result_sid,
-        json&& result_data
+        const json& result_data
       )
     {
       unique_lock<mutex> lock(m_session_lock);
       update_session_locks();
       if(!m_locked_sessions.contains(sid)) {
         spdlog::trace("completing session {}", sid);
-        session_data result{result_sid, std::move(result_data)};
+        session_data result{result_sid, result_data};
 
         auto it = m_session_players.find(sid);
         if(it != m_session_players.end()) {

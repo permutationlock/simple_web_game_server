@@ -12,9 +12,9 @@ upon the [WebSocket++](https://github.com/zaphoyd/websocketpp) and
 
 The core motivation for the libarary is to:
 
- - provide a simple system to set up an online multiplayer game with
-   automatic matchmaking;
- - be as flexible as possible within this structure by allowing for any
+ - provide a simple framework to set up servers to run online multiplayer games
+   and perform algorithmic matchmaking;
+ - be as flexible as possible within this structure and allow for any
    game and any matchmaking algorithm;
  - be secure and authenticate clients in order to support competitive games;
  - have servers run independently with no need for external communication
@@ -33,13 +33,14 @@ intended session with the server.
 
 With regards point four and server isolation, by default the servers in this
 library listen only
-for client connections and maintain no databases or external connections.
-Each time a server session is completed, the server will send each
+for client connections and make no other external communication, e.g.
+updating a databases.
+However, each time a server session is completed, the server will send each
 associated client a token verifying the result. Thus, if it is desired that server
 activity be tracked, for example to track ranked matches in a
 competitive game, each client may be designed to submit their result tokens to a
 central location for tracking. Obviously, in order to guard against
-malicious clients, their must be significant incentive for clients to
+malicious clients, there must be significant incentive for clients to
 submit their results. However, this will usually exist
 naturally, e.g. the winner in a competitive game will always wish to
 submit the result.
@@ -53,15 +54,30 @@ aspect of the server: multiple threads may be assigned to handle WebSocket
 connections and messages, multiple threads may handle processing server
 actions, and the game update loop may update the independent games in parallel.
 
+**Note on latency and performance:** Currently most web
+browser are restricted to only use the TCP
+based WebSocket protocol for client-server socket communication,
+[see this article for a nice explanation](https://gafferongames.com/post/why_cant_i_send_udp_packets_from_a_browser/).
+Because of this restriction, the design of the server assumes that most games
+using this library will not be twitch reaction
+dependent real-time games and prioritizes performance over low latency.
+Specifically, in order to
+reduce mutex locking, all game updates are run on a fixed time-step, e.g. 16ms
+or 60 updates per second; in which case we introduce the additional lag of
+up to 16ms on client input. Of course, one could simply reduce this time-step
+to zero and essentially eliminate all lag aside from the time it takes to
+actually compute the updates, but understand that
+this goes against the design in mind and could potentially harm performance.
+
 #### Examples
 
  - [Minimal Template](https://github.com/permutationlock/simple_web_game_server/tree/main/examples/minimal_template):
-   a minimal example of game and matchmaking servers, with and without TLS.
+   minimal examples of game and matchmaking servers, with and without TLS.
  - [Chat](https://github.com/permutationlock/simple_web_game_server/tree/main/examples/chat):
    a simple chat server displaying the basic features of the game server.
  - [Tic Tac Toe](https://github.com/permutationlock/simple_web_game_server/tree/main/examples/tic_tac_toe):
    a full implementation of a tic tac toe game with matchmaking,
-   reconnection to games, and player submission of game and matchmaking results
+   reconnection to games, and client submission of game and matchmaking results
    to a central server.
 
 #### Basic idea of code structure

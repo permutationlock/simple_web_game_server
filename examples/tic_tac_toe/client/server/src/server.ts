@@ -20,8 +20,22 @@ const secret = "secret";
 const serverDBFilePath = "../data/server.db";
 let serverDB = new Datastore({ filename: serverDBFilePath, autoload: true });
 
+interface ServerDBItem {
+  name: string,
+  value: number
+};
+
+function isServerDBToken(token : any): token is LoginToken {
+  return ('pid' in  token);
+}
+
 const userDBFilePath = "../data/users.db";
 let userDB = new Datastore({ filename: userDBFilePath, autoload: true });
+
+interface UserDBItem {
+  pid: number,
+  token: string
+};
 
 const myUpdateOpts: UpdateOptions = {
   multi: false,
@@ -31,23 +45,20 @@ const myUpdateOpts: UpdateOptions = {
 
 var pid = 0;
 serverDB.findOne({ name: "pid" }, (err, doc) => {
-  if(doc != null) {
-    if("value" in doc) {
-      pid = <number>(doc.value);
-    }
+  if(doc != null && isServerDBItem(doc)) {
+    let item = <ServerDBItem>doc;
+    pid = item.value;
   } else {
     serverDB.insert({ name: "pid", value: pid });
   }
 });
 
 
-
 var sid = 0;
 serverDB.findOne({ name: "sid" }, (err, doc) => {
-  if(doc != null) {
-    if("value" in doc) {
-      sid = <number>(doc.value);
-    }
+  if(doc != null && isServerDBItem(doc)) {
+    let item = <ServerDBItem>doc;
+    sid = item.value;
   } else {
     serverDB.insert({ name: "sid", value: sid });
   }
@@ -99,41 +110,38 @@ app.get("/login/:token", (req, res) => {
       loginOpts,
       (err, decoded: object | undefined) => {
         if(decoded != undefined && isLoginToken(decoded)) {
-          let id: number = (<LoginToken>decoded).pid;
-          serverDB.findOne({ pid: id }, (err, doc) => {
-            if(doc != null) {
-              if("token" in doc) {
-                let playerOpts: VerifyOptions = {
-                  issuer: 'tic_tac_toe_auth'
-                };
-                let token = <string>(doc.token);
-                jsonwebtoken.verify(
-                    token,
-                    secret,
-                    playerOpts,
-                    (err, decoded: object | undefined) => {
-                      if(decoded != undefined) {
-                        console.log("sending old match token: " + token);
-                        res.send(token);
-                      } else {
-                        token = createMatchToken(id);
-                        console.log("old token expired, sending new match token: " + token);
-                        res.send(token);
-                        serverDB.update(
-                            { pid: id },
-                            { pid: id, token: token },
-                            myUpdateOpts,
-                            () => {}
-                          );
-                      }
+          let claims = <LoginToken>decoded;
+          userDB.findOne({ pid: claims.pid }, (err, doc) => {
+            if(doc != null && isUserDBItem(doc)) {
+              let item = <UserDBItem>doc;
+              let playerOpts: VerifyOptions = {
+                issuer: 'tic_tac_toe_auth'
+              };
+              let token = item.token;
+              jsonwebtoken.verify(
+                  token, secret, playerOpts,
+                  (err, decoded: object | undefined) => {
+                    if(decoded != undefined) {
+                      console.log("sending old match token: " + token);
+                      res.send(token);
+                    } else {
+                      token = createMatchToken(id);
+                      console.log("old token expired, sending new match token: " + token);
+                      res.send(token);
+                      userDB.update(
+                          { pid: id },
+                          { pid: id, token: token },
+                          myUpdateOpts,
+                          () => {}
+                        );
                     }
-                  );
-              }
+                  }
+                );
             } else {
               let token = createMatchToken(id);
               console.log("creating match token: " + token);
               res.send(token);
-              serverDB.insert({ pid: id, token: token });
+              userDB.insert({ pid: id, token: token });
             }
           });
         }
@@ -149,10 +157,10 @@ app.get("/cancel/:token", (req, res) => {
       opts,
       (err, decoded: object | undefined) => {
         if(decoded != undefined && isLoginToken(decoded)) { 
-          let id: number = (<LoginToken>decoded).pid;
-          serverDB.update(
-              { pid: id },
-              { pid: id, token: "" },
+          let claims = <LoginToken>decoded;
+          userDB.update(
+              { pid: claims.pid },
+              { pid: claims.pid, token: "" },
               myUpdateOpts,
               () => {}
             );
@@ -162,35 +170,30 @@ app.get("/cancel/:token", (req, res) => {
         }
       }
     );
-  }
-);
-
+});
 
 app.get("/submit/:token", (req, res) => {
-  let opts: VerifyOptions = { issuer: 'tic_tac_toe_game_server' };
+  let submitOptions: VerifyOptions = { issuer: 'tic_tac_toe_game_server' };
   jsonwebtoken.verify(
       req.params.token,
       secret,
-      opts,
+      submitOptions,
       (err, decoded: object | undefined) => {
         if(decoded != undefined && isLoginToken(decoded)) { 
-          let id: number = (<LoginToken>decoded).pid;
-
-          serverDB.update(
-              { pid: id },
-              { pid: id, token: "" },
+          let claims = <LoginToken>decoded;
+          userDB.update(
+              { pid: claims.pid },
+              { pid: claims.pid, token: "" },
               myUpdateOpts,
               () => {}
             );
           res.send({ success: true });
-
         } else {
           res.send({ success: false });
         }
       }
     );
-  }
-);
+});
 
 app.use(express.static(path.join(__dirname, "..", "..", "build")));
 

@@ -5,6 +5,10 @@ and matchmaking servers for browser games using WebSockets and JWT
 authentication. It is built
 upon the [WebSocket++](https://github.com/zaphoyd/websocketpp) and
 [JWT++](https://github.com/Thalhammer/jwt-cpp) libraries.
+
+The source code is available on
+[GitHub](https://github.com/permutationlock/simple_web_game_server).
+An API reference and
 [Doxygen](https://www.doxygen.nl/index.html) documentation is available
 [here](https://permutationlock.com/simple_web_game_server/).
 
@@ -54,8 +58,9 @@ aspect of the server: multiple threads may be assigned to handle WebSocket
 connections and messages, multiple threads may handle processing server
 actions, and the game update loop may update the independent games in parallel.
 
-**Note on latency and performance:** Currently most web
-browser are restricted to only use the TCP
+####Latency and performance
+
+Currently most web browser are restricted to only use the TCP
 based WebSocket protocol for client-server socket communication,
 [see this article for a nice explanation](https://gafferongames.com/post/why_cant_i_send_udp_packets_from_a_browser/).
 Because of this restriction, the design of the server assumes that most games

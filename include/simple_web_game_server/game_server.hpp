@@ -84,7 +84,7 @@ namespace simple_web_game_server {
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f,
         std::chrono::milliseconds t
-      ) : m_jwt_server(v, f, t)
+      ) : m_game_count(0), m_jwt_server(v, f, t) 
     {
       m_jwt_server.set_open_handler(
           bind(
@@ -142,7 +142,7 @@ namespace simple_web_game_server {
     /// Stops the server and clears all data and connections.
     void stop() {
       m_jwt_server.stop();
-
+      m_game_condition.notify_one();
       {
         lock_guard<mutex> guard(m_game_list_lock);
         m_games.clear();
@@ -156,7 +156,10 @@ namespace simple_web_game_server {
         lock_guard<mutex> guard(m_connection_update_list_lock);
         m_connection_updates.clear();
       }
-      m_game_condition.notify_one();
+      {
+        lock_guard<mutex> guard(m_game_count_lock);
+        m_game_count = 0;
+      }
     }
 
     /// Returns the number of verified clients connected.
@@ -209,10 +212,14 @@ namespace simple_web_game_server {
 
           // we remove game data here to catch any possible players submitting
           // new connections in the last time-step when the game session ends
-          for(session_id sid : finished_games) {
-            spdlog::trace("erasing game session {}", sid);
-            m_out_messages.erase(sid);
-            m_games.erase(sid);
+          {
+            lock_guard<mutex> gc_guard(m_game_count_lock);
+            for(session_id sid : finished_games) {
+              spdlog::trace("erasing game session {}", sid);
+              m_out_messages.erase(sid);
+              m_games.erase(sid);
+              --m_game_count;
+            }
           }
           finished_games.clear();
 
@@ -247,8 +254,8 @@ namespace simple_web_game_server {
 
     /// Returns the number of running game sessions.
     std::size_t get_game_count() {
-      lock_guard<mutex> guard(m_game_list_lock);
-      return m_games.size();
+      lock_guard<mutex> guard(m_game_count_lock);
+      return m_game_count;
     }
 
   private:
@@ -289,6 +296,10 @@ namespace simple_web_game_server {
             out_messages_it = m_out_messages.emplace(
                 update.id.session, vector<message>{}
               ).first;
+            {
+              lock_guard<mutex> gc_guard(m_game_count_lock);
+              ++m_game_count;
+            }
           }
      
           games_it->second.connect(out_messages_it->second, update.id.player);
@@ -357,6 +368,9 @@ namespace simple_web_game_server {
         id_hash
       > m_games;
     mutex m_game_list_lock;
+
+    std::size_t m_game_count;
+    mutex m_game_count_lock;
 
     unordered_map<
         session_id,

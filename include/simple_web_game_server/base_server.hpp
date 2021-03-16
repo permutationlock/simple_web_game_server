@@ -89,7 +89,6 @@ namespace simple_web_game_server {
       return "SESSION_COMPLETE";
     };
   };
-
   
   /// A WebSocket server that performs authentication and manages sessions.
   /**
@@ -167,7 +166,7 @@ namespace simple_web_game_server {
 
     /// The type of the result data of given session.
     struct session_data {
-      session_data(const session_id& s, json&& d) : session(s), data(d) {}
+      session_data(const session_id& s, const json& d) : session(s), data(d) {}
       session_id session;
       json data;
     };
@@ -239,7 +238,7 @@ namespace simple_web_game_server {
         function<std::string(const combined_id&, const json&)> f,
         std::chrono::milliseconds t
       ) : m_is_running(false), m_jwt_verifier(v), m_get_result_str(f),
-          m_session_release_time(t),
+          m_session_release_time(t), m_player_count(0),
           m_handle_open([](const combined_id&, json&&){}),
           m_handle_close([](const combined_id&){}),
           m_handle_message([](const combined_id&, std::string&&){})
@@ -332,6 +331,7 @@ namespace simple_web_game_server {
           lock_guard<mutex> action_guard(m_action_lock);
           lock_guard<mutex> session_guard(m_session_lock);
           lock_guard<mutex> conn_guard(m_connection_lock);
+          lock_guard<mutex> pc_guard(m_player_count_lock);
 
           // collect all unresolved connection actions
           while(!m_actions.empty()) {
@@ -352,6 +352,7 @@ namespace simple_web_game_server {
             close_hdl(hdl, close_reasons::server_shutdown());
           }
 
+          m_player_count = 0;
           m_connection_ids.clear();
           m_id_connections.clear();
           m_new_connections.clear();
@@ -459,8 +460,8 @@ namespace simple_web_game_server {
 
     /// Returns the number of verified clients connected.
     std::size_t get_player_count() {
-      lock_guard<mutex> guard(m_connection_lock);
-      return m_connection_ids.size();
+      lock_guard<mutex> guard(m_player_count_lock);
+      return m_player_count;
     }
 
     /// Asynchronously sends a message to the given client.
@@ -563,6 +564,10 @@ namespace simple_web_game_server {
             m_session_players.erase(it);
           }
         }
+      }
+      {
+        lock_guard<mutex> pc_guard(m_player_count_lock);
+        --m_player_count;
       }
 
       spdlog::debug("player {} with session {} disconnected",
@@ -670,6 +675,9 @@ namespace simple_web_game_server {
 
         m_connection_ids.erase(id_connections_it->second);
         m_id_connections.erase(id_connections_it);
+      } else {
+        lock_guard<mutex> pc_guard(m_player_count_lock);
+        ++m_player_count;
       }
 
       m_connection_ids.emplace(hdl, id);
@@ -775,10 +783,11 @@ namespace simple_web_game_server {
     mutex m_session_lock;
 
     queue<action> m_actions;
-
-    // m_action_lock guards the member m_actions
-    mutex m_action_lock;
+    mutex m_action_lock;        // m_action_lock guards the member m_actions
     condition_variable m_action_cond;
+
+    std::size_t m_player_count;
+    mutex m_player_count_lock;  // m_player_count_lock guards the member m_player_count
 
     // functions to handle client actions
     function<void(const combined_id&, json&&)> m_handle_open;

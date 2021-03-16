@@ -7,7 +7,6 @@
 #include <jwt-cpp/jwt.h>
 
 #include <simple_web_game_server/client.hpp>
-#include <model_games/minimal_game.hpp>
 
 #include <websocketpp/server.hpp>
 #include <websocketpp_configs/asio_no_logs.hpp>
@@ -38,7 +37,7 @@ TEST_CASE("the base client should interact with a websocket server") {
 
   // setup logging sink to track errors
   std::ostringstream oss;
-  auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt> (oss);
+  auto ostream_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(oss);
   auto logger = std::make_shared<spdlog::logger>("my_logger", ostream_sink);
   spdlog::set_default_logger(logger);
   spdlog::set_level(spdlog::level::err);

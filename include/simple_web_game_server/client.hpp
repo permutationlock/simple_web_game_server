@@ -28,7 +28,6 @@
 #include <jwt-cpp/jwt.h> 
 #include <spdlog/spdlog.h>
 
-#include <atomic>
 #include <mutex>
 #include <functional>
 
@@ -106,6 +105,9 @@ namespace simple_web_game_server {
             simple_web_game_server::_2)
         );
     }
+
+    client(const client& c) :
+      client{c.m_handle_open, c.m_handle_close, c.m_handle_message} {}
 
     /// Connects to a server at the given URI and sends the given string.
     void connect(const std::string& uri, const std::string& jwt) {
@@ -250,8 +252,8 @@ namespace simple_web_game_server {
     // member variables
     ws_client m_client;
     typename ws_client::connection_ptr m_connection;
-    std::atomic<bool> m_is_running;
-    std::atomic<bool> m_has_failed;
+    bool m_is_running;
+    bool m_has_failed;
     std::string m_jwt;
     function<void()> m_handle_open;
     function<void()> m_handle_close;

@@ -4,7 +4,7 @@ This folder contains minimal templates for setting up game and matchmaking
 servers with and without TLS. The **minimal_game.hpp** file defines the classes
 **minimal_game** and **minimal_matchmaker** which define a bare bones classes
 satisfying the template concepts for game and matchmaker used in the
-*simple_web_game_server* library. Each subdirectory contains corresponding
+*Simple Web Game Server* library. Each subdirectory contains corresponding
 example code to setup a server using the classes defined in
 **minimal_game.hpp**.
 

@@ -1,4 +1,4 @@
-### Chat Example
+### Tic Tac Toe Example
 
 This folder contains an example Tic Tac Toe web game, useful to see how to set
 up a full game system with matchmaking and game reporting. The
@@ -8,10 +8,10 @@ contains the corresponding matchmaking server, and the **client** directory
 contains a [React](https://reactjs.org/)
 client and [Express.js](https://expressjs.com/) web server to serve the
 frontend for the Tic Tac Toe app, issue JWTs for the matchmaker, verify JWTs
-for game results, as well as some other features.
+for game results, and run a few other features.
 
 Because this app uses TLS for the HTTPS and WSS protocols, you must have an
-authorized certificate for the domain name where you server the application. To
+authorized certificate for the domain name where you serve the application. To
 achieve this for localhost I recommend installing
 [mkcert](https://github.com/FiloSottile/mkcert). Then you can generate the
 certificate key pair:
@@ -43,5 +43,5 @@ make
 ./game_server
 ```
 
-Then, once all three are running, go to **https://localhost:9092** in any
+Once all three are running, go to **https://localhost:9092** in any
 browser to access the app.

@@ -8,7 +8,6 @@ upon the [WebSocket++](https://github.com/zaphoyd/websocketpp) and
 
 The source code is available on
 [GitHub](https://github.com/permutationlock/simple_web_game_server).
-An API reference and
 [Doxygen](https://www.doxygen.nl/index.html) documentation is available
 [here](https://permutationlock.com/simple_web_game_server/).
 
@@ -58,7 +57,7 @@ aspect of the server: multiple threads may be assigned to handle WebSocket
 connections and messages, multiple threads may handle processing server
 actions, and the game update loop may update the independent games in parallel.
 
-####Latency and performance
+#### Latency and performance
 
 Currently most web browser are restricted to only use the TCP
 based WebSocket protocol for client-server socket communication,

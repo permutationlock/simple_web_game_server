@@ -55,7 +55,10 @@ clients to them with the appropriate JWT authentication.
 Vertical scaling is accomplished by allowing multi-threading in each
 aspect of the server: multiple threads may be assigned to handle WebSocket
 connections and messages, multiple threads may handle processing server
-actions, and the game update loop may update the independent games in parallel.
+actions, and the game update loop may update games in parallel.
+However, in most the only parallelization that will
+benefit performance is processing game updates, and that is what is implemented
+in examples.
 
 #### Latency and performance
 
@@ -64,14 +67,11 @@ based WebSocket protocol for client-server socket communication,
 [see this article for a nice explanation](https://gafferongames.com/post/why_cant_i_send_udp_packets_from_a_browser/).
 Because of this restriction, the design of the server assumes that most games
 using this library will not be twitch reaction
-dependent real-time games and prioritizes performance over low latency.
+dependent games and prioritizes performance over low latency.
 Specifically, in order to
-reduce mutex locking, all game updates are run on a fixed time-step, e.g. 16ms
-or 60 updates per second; in which case we introduce the additional lag of
-up to 16ms on client input. Of course, one could simply reduce this time-step
-to zero and essentially eliminate all lag aside from the time it takes to
-actually compute the updates, but understand that
-this goes against the design in mind and could potentially harm performance.
+reduce mutex locking, all game updates are run on a fixed time-step, e.g. every
+32ms or 30 updates per second, in which case we introduce the additional lag of
+up to 32ms on every client input.
 
 #### Examples
 

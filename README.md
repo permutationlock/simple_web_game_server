@@ -71,7 +71,9 @@ dependent games and prioritizes performance over low latency.
 Specifically, in order to
 reduce mutex locking, all game updates are run on a fixed time-step, e.g. every
 32ms or 30 updates per second, in which case we introduce the additional lag of
-up to 32ms on every client input.
+up to 32ms on every client input. Of course the update loop may run on a very
+low times-step, but it is best to ensure that all game updates will finish
+executing within that time.
 
 #### Examples
 

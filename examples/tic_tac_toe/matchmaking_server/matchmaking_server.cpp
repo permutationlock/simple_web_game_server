@@ -43,6 +43,8 @@ int main() {
         .set_issuer("tic_tac_toe_matchmaker")
         .set_payload_claim("pid", claim(id.player))
         .set_payload_claim("sid", claim(id.session))
+        .set_expires_at(std::chrono::system_clock::now()
+          + std::chrono::seconds{1800})
         .set_payload_claim("data", claim(data))
         .sign(jwt::algorithm::hs256{secret});
     };

@@ -6,6 +6,19 @@ import { RouteComponentProps } from 'react-router-dom';
 
 const TIMESTEP = 10;
 
+type GameHomeButtonProps = {
+  disabled: boolean,
+  onClick: () => void
+};
+
+function GameHomeButton(props: GameHomeButtonProps,) {
+  return (
+    <button onClick={props.onClick} disabled={props.disabled}>
+    Back to home
+    </button>
+  );
+}
+
 var closeReasons = new Set([
     "INVALID_TOKEN",
     "DUPLICATE_CONNECTION",
@@ -37,6 +50,7 @@ class Game extends React.Component<GameProps, GameState> {
     this.connect = this.connect.bind(this);
     this.move = this.move.bind(this);
     this.finish = this.finish.bind(this);
+    this.goHome = this.goHome.bind(this);
   }
 
   componentDidMount() {
@@ -131,6 +145,10 @@ class Game extends React.Component<GameProps, GameState> {
     }
   }
 
+  goHome() {
+    this.props.history.push("/");
+  }
+
   render() {
     return (
       <div className="Game">
@@ -139,6 +157,9 @@ class Game extends React.Component<GameProps, GameState> {
           move={this.move}
           connected={this.state.socket != null}
         />
+        <div className="Game-home-button">
+          <GameHomeButton onClick={this.goHome} disabled={!this.state.done} />
+        </div>
       </div>
     );
   }

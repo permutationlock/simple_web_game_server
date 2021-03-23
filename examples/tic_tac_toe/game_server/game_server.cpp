@@ -35,12 +35,17 @@ int main() {
     .with_issuer("tic_tac_toe_matchmaker");
 
   // create a function to sign game result tokens
-  auto sign_game = [](const combined_id& id, const json& data){ 
+  auto sign_game = [](const combined_id& id, const json& data){
+      json token_data;
+      token_data["players"] = data["players"];
+      token_data["scores"] = data["scores"];
       std::string token = jwt::create<nlohmann_traits>()
         .set_issuer("tic_tac_toe_game_server")
         .set_payload_claim("pid", claim(id.player))
         .set_payload_claim("sid", claim(id.session))
-        .set_payload_claim("data", claim(json::value_t::object))
+        .set_expires_at(std::chrono::system_clock::now()
+          + std::chrono::seconds{1800})
+        .set_payload_claim("data", claim(token_data))
         .sign(jwt::algorithm::hs256{"secret"});
       json temp = data;
       temp["type"] = "result";

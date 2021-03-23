@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
+#include <cmath>
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
@@ -272,13 +273,20 @@ public:
   }
 
   json get_state() const {
+    int state = m_board.get_state() + m_state;
+
     json game_json;
     game_json["board"] = m_board.get_board();
     game_json["xmove"] = m_xmove;
     game_json["moves"] = m_move_list;
     game_json["times"] = std::vector<long>{ m_xtime, m_otime };
-    game_json["state"] = m_board.get_state() + m_state;
+    game_json["state"] = state;
     game_json["done"] = is_done();
+    game_json["players"] = m_player_list;
+    game_json["scores"] = {
+        0.5 + (0.5 * state),
+        0.5 - (0.5 * state)
+      };
  
     return game_json;
   }
@@ -414,15 +422,26 @@ public:
   using message = std::pair<session_id, std::string>;
   using game = std::tuple<std::vector<session_id>, session_id, json>;
 
+  tic_tac_toe_matchmaker(): m_elapsed_time(0) {}
+
   struct session_data {
-    session_data(const json& data) {}
+    session_data(const json& data): m_valid(true) {
+      try {
+        rating = data.at("rating").get<int>();
+      } catch(json::exception& e) {
+        m_valid = false;
+      }
+    }
 
     bool is_valid() {
       return true;
     }
-  };
 
-  tic_tac_toe_matchmaker() : m_sid_count(0) {}
+    int rating;
+
+  private:
+    bool m_valid;
+  };
 
   bool can_match(
       const unordered_map<session_id, session_data, id_hash>& session_map
@@ -438,15 +457,37 @@ public:
       long delta_time
     )
   {
-    vector<session_id> sl;
-    for(auto& spair : session_map) {
-      sl.push_back(spair.first);
-      if(sl.size() > 1) {
-        game_list.emplace_back(
-            std::move(sl), 
-            m_sid_count++,
-            json{ { "matched", true } }
+    m_elapsed_time += delta_time;
+    if(m_elapsed_time > 5000) {
+      m_elapsed_time = 0;
+      unordered_set<session_id> matched;
+      for(auto it1 = session_map.begin(); it1 != session_map.end(); ++it1) {
+        if(matched.count(it1->first) > 0) {
+          continue;
+        }
+        int min_score = 100000;
+        session_id partner;
+        for(auto it2 = ++it1; it2 != session_map.end(); ++it2) {
+          if(matched.count(it2->first) > 0) {
+            continue;
+          }
+          int score = std::abs(it1->second.rating - it2->second.rating);
+          if(score < min_score) {
+            partner = it2->first;
+            min_score = score;
+          }
+        }
+        if(min_score <= 250) {
+          game_list.emplace_back(
+            game{
+              { it1->first, partner },
+              it1->first,
+              json{ { "matched", true } }
+            }
           );
+          matched.insert(it1->first);
+          matched.insert(partner);
+        }
       }
     }
   }
@@ -458,7 +499,7 @@ public:
   }
 
 private:
-  session_id m_sid_count;
+  long m_elapsed_time;
 };
 
 #endif // TIC_TAC_TOE_HPP

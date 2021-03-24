@@ -2,9 +2,9 @@
 
 This folder contains an example Tic Tac Toe web game, useful to see how to set
 up a full game system with matchmaking and game reporting. The
-**game_server** folder contains C++ code
-for the Tic Tac Toe WebSocket game server, the **matchmaking_server** folder
-contains the corresponding matchmaking server, and the **client** directory
+game_server folder contains C++ code
+for the Tic Tac Toe WebSocket game server, the matchmaking_server folder
+contains the corresponding matchmaking server, and the client directory
 contains a [React](https://reactjs.org/)
 client and [Express.js](https://expressjs.com/) web server to serve the
 frontend for the Tic Tac Toe app, issue JWTs for the matchmaker, verify JWTs
@@ -43,5 +43,6 @@ make
 ./game_server
 ```
 
-Once all three are running, go to **https://localhost:9092** in any
+Once all three are running, go to
+[https://localhost:9092](https://localhost:9092) in any
 browser to access the app.

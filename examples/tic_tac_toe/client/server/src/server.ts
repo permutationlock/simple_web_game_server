@@ -127,6 +127,38 @@ function isLoginToken(token : any): token is LoginToken {
   return (typeof token.pid === 'number');
 }
 
+function sendMatchToken(id: number, send: (t: string) => void) {
+  userDB.findOne({ pid: id }, (err, doc: UserDBItem | null) => {
+    if(doc != null) {
+      let playerOpts: VerifyOptions = {
+        issuer: 'tic_tac_toe_auth'
+      };
+      let token = doc.token;
+      jsonwebtoken.verify(
+          token, secret, playerOpts,
+          (err, decoded: object | undefined) => {
+            if(decoded != undefined) {
+              // saved token is still valid, send it
+              send(token);
+            } else {
+              // saved token is invalid, generate a new token
+              token = createMatchToken(doc.pid, doc.rating);
+              userDB.update(
+                  { pid: doc.pid },
+                  { $set: { token: token } },
+                  myUpdateOpts,
+                  () => {}
+                );
+              send(token);
+            }
+          }
+        );
+    } else {
+      console.log("error: match requested for unknown player " + id);
+    }
+  });
+}
+
 app.get("/login/:token", (req, res) => {
   let loginOpts: VerifyOptions = { issuer: 'tic_tac_toe_login' };
   jsonwebtoken.verify(
@@ -136,36 +168,7 @@ app.get("/login/:token", (req, res) => {
       (err, decoded: object | undefined) => {
         if(decoded != undefined && isLoginToken(decoded)) {
           let claims = <LoginToken>decoded;
-          userDB.findOne({ pid: claims.pid }, (err, doc: UserDBItem | null) => {
-            if(doc != null) {
-              let playerOpts: VerifyOptions = {
-                issuer: 'tic_tac_toe_auth'
-              };
-              let token = doc.token;
-              jsonwebtoken.verify(
-                  token, secret, playerOpts,
-                  (err, decoded: object | undefined) => {
-                    if(decoded != undefined) {
-                      // saved token is still valid, send it
-                      res.send(token);
-                    } else {
-                      // saved token is invalid, generate a new token
-                      token = createMatchToken(doc.pid, doc.rating);
-                      res.send(token);
-                      userDB.update(
-                          { pid: claims.pid },
-                          { $set: { token: token } },
-                          myUpdateOpts,
-                          () => {}
-                        );
-                    }
-                  }
-                );
-            } else {
-              console.log("error: match requested for unknown player " +
-                          claims.pid);
-            }
-          });
+          sendMatchToken(claims.pid, res.send.bind(res));
         }
       }
     );
@@ -284,6 +287,8 @@ function updateRatings(players: [number,number], scores: [number,number]) {
             (err, doc) => {}
           );
         });
+      } else {
+        console.log("error: match submitted for players not in database");
       }
     }
   );

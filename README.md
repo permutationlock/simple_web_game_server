@@ -15,8 +15,8 @@ The source code is available on
 
 The core motivation for the libarary is to:
 
- - provide a framework to set up servers to run online multiplayer games
-   and perform algorithmic matchmaking;
+ - provide a C++ framework for creating servers to run online multiplayer
+   browser games and to perform algorithmic matchmaking;
  - be flexible and simple by providing as little as possible
    beyond the core functions;
  - be secure and authenticate clients in order to support competitive games;

@@ -48,7 +48,6 @@ int main() {
         .set_payload_claim("data", claim(token_data))
         .sign(jwt::algorithm::hs256{"secret"});
       json temp = data;
-      temp["type"] = "result";
       temp["token"] = token;
       return temp.dump();
     };

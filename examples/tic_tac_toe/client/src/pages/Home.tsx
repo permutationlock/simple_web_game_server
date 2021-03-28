@@ -70,11 +70,11 @@ class Home extends React.Component<HomeProps, HomeState> {
       .then((dataStr) => {
         console.log("fetched: " + dataStr);
         let data: any = JSON.parse(dataStr);
-        if(data.success != undefined && data.success === true) {
-          if(data.pid != undefined && typeof data.pid === 'number') {
+        if(data.success !== undefined && data.success === true) {
+          if(data.pid !== undefined && typeof data.pid === 'number') {
             this.setState({ pid: data.pid });
           }
-          if(data.rating != undefined && typeof data.rating === 'number') {
+          if(data.rating !== undefined && typeof data.rating === 'number') {
             this.setState({ rating: data.rating});
           }
         }
@@ -82,7 +82,7 @@ class Home extends React.Component<HomeProps, HomeState> {
   }
 
   handleClick() {
-    if(this.state.token != null) {
+    if(this.state.token !== null) {
       const loginUri = "https://localhost:9092/login/" + this.state.token;
 
       fetch(loginUri)

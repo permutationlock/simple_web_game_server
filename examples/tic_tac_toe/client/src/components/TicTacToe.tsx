@@ -3,11 +3,10 @@ import './TicTacToe.css';
 
 class GameData {
   board: Array<number>;
-  time: number;
-  opponent_time: number;
-  xmove: boolean;
+  times: Array<number>;
   state: number;
-  your_turn: boolean;
+  turn: number;
+  player: number;
   done: boolean;
   token: string | null;
 
@@ -15,38 +14,25 @@ class GameData {
     this.board = [ 0, 0, 0,
                    0, 0, 0,
                    0, 0, 0 ];
-    this.time = 0;
-    this.opponent_time = 0;
-    this.xmove = true;
+    this.times = [ 0.0, 0.0 ];
+    this.turn = 0;
     this.state = 0;
-    this.your_turn = false;
+    this.player = 0;
     this.done = false;
     this.token = null;
   }
-};
+}
 
 function parseUpdate(gameData: GameData, text: string): GameData {
   let updateData = JSON.parse(text);
+
   let newGameData = gameData;
 
-  if(updateData["type"] === "game") {
-    newGameData["board"] = updateData["board"];
-    newGameData["time"] = updateData["time"];
-    newGameData["opponent_time"] = updateData["opponent_time"];
-    newGameData["xmove"] = updateData["xmove"];
-    newGameData["state"] = updateData["state"];
-    newGameData["your_turn"] = updateData["your_turn"];
-    newGameData["done"] = updateData["done"];
-  } else if(updateData["type"] === "time") {
-    newGameData["time"] = updateData["time"];
-    newGameData["opponent_time"] = updateData["opponent_time"];
-  } else if(updateData["type"] === "result") {
-    console.log("result token: " + updateData["token"]);
-    newGameData["token"] = updateData["token"];
-    newGameData["done"] = true;
-    newGameData["board"] = updateData["board"];
-    newGameData["xmove"] = updateData["xmove"];
-    newGameData["state"] = updateData["state"];
+  let key: keyof GameData;
+  for(key in newGameData) {
+    if(key in updateData) {
+      (newGameData[key] as any) = updateData[key];
+    }
   }
 
   return newGameData;
@@ -54,16 +40,9 @@ function parseUpdate(gameData: GameData, text: string): GameData {
 
 function updateGame(gameData: GameData): GameData {
   let newGameData = gameData;
-  if(gameData.your_turn) {
-    newGameData.time = newGameData.time - 10;
-    if(newGameData.time < 0) {
-      newGameData.time = 0;
-    }
-  } else {
-    newGameData.opponent_time = newGameData.opponent_time - 10;
-    if(newGameData.opponent_time < 0) {
-      newGameData.opponent_time = 0;
-    }
+  newGameData.times[newGameData.turn] -= 10;
+  if(newGameData.times[newGameData.turn] < 0) {
+    newGameData.times[newGameData.turn] = 0;
   }
   return newGameData;
 }
@@ -142,13 +121,12 @@ type TicTacToeProps = {
 class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
   onClick(square : number) {
     if(this.props.gameData.board[square] === 0 &&
-      this.props.gameData.your_turn)
+      this.props.gameData.turn === this.props.gameData.player)
     {
-      let isX = this.props.gameData.your_turn ? this.props.gameData.xmove :
-        !this.props.gameData.xmove;
+      let isX = (this.props.gameData.turn === 0);
       let newGameData = this.props.gameData;
       newGameData.board[square] = isX ? 1 : -1;
-      newGameData.your_turn = false;
+      newGameData.turn = (newGameData.turn + 1) % 2;
       this.props.move(
           newGameData,
           JSON.stringify({ "move": [ square % 3, Math.floor(square / 3) ] })
@@ -157,12 +135,14 @@ class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
   }
 
   render() {
-    let isX = this.props.gameData.your_turn ? this.props.gameData.xmove :
-      !this.props.gameData.xmove;
+    let isX = (this.props.gameData.turn === 0);
+    let yourTurn = (this.props.gameData.turn === this.props.gameData.player);
+    let player = this.props.gameData.player;
+    let oppPlayer = (this.props.gameData.player + 1) % 2;
 
     let isDeactivated = !this.props.connected
       || this.props.gameData.done
-      || !this.props.gameData.your_turn;
+      || !yourTurn;
 
     let renderSquare = (i: number) => {
       return (
@@ -179,7 +159,7 @@ class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
         <div className="TicTacToe-game">
           <StatusBar
             done={this.props.gameData.done}
-            yourTurn={this.props.gameData.your_turn}
+            yourTurn={yourTurn}
             isX={isX}
             state={this.props.gameData.state}
           />
@@ -199,8 +179,9 @@ class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
             {renderSquare(8)}
           </div>
           <div className="TicTacToe-timers">
-            <Timer name="You" time={this.props.gameData.time} />
-            <Timer name="Opponent" time={this.props.gameData.opponent_time} />
+            <Timer name="You" time={this.props.gameData.times[player]} />
+            <Timer name="Opponent"
+              time={this.props.gameData.times[oppPlayer]} />
           </div>
         </div>
       </div>
@@ -208,4 +189,4 @@ class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
   }
 };
 
-export { TicTacToe, parseUpdate, updateGame, GameData };
+export { GameData, TicTacToe, parseUpdate, updateGame };

@@ -12,14 +12,17 @@ using json = nlohmann::json;
 #include <unordered_map>
 #include <queue>
 #include <functional>
+#include <chrono>
 
 using std::vector;
 using std::unordered_map;
 using std::unordered_set;
 using std::queue;
 
-const int X_VAL = 1;
-const int O_VAL = -1;
+
+// TIC TAC TOE LOGIC
+
+const vector<int> BOARD_VALUES = { 1, -1 };
 const int EMPTY_VAL = 0;
 
 class tic_tac_toe_board {
@@ -30,25 +33,14 @@ public:
     }
   }
 
-  bool add_x(unsigned int i, unsigned int j) {
+  bool add_move(unsigned int i, unsigned int j, int value) {
     if(i > 2 || j > 2) {
       return false;
     } else if(get_value(i, j) != EMPTY_VAL) {
       return false;
     }
 
-    move(i, j, X_VAL);
-    return true;
-  }
-
-  bool add_o(unsigned int i, unsigned int j) {
-    if(i > 2 || j > 2) {
-      return false;
-    } else if(get_value(i, j) != EMPTY_VAL) {
-      return false;
-    }
-
-    move(i, j, O_VAL);
+    move(i, j, value);
     return true;
   }
 
@@ -132,6 +124,9 @@ private:
   std::size_t m_move_count;
 };
 
+
+// GAME
+
 struct tic_tac_toe_player_traits {
   struct id {
     using player_id = unsigned long;
@@ -175,8 +170,8 @@ public:
   using message = std::pair<player_id, std::string>;
 
   tic_tac_toe_game(const json& msg) : m_valid(true), m_started(false),
-    m_game_over(false), m_xmove(true), m_state(0), m_xtime(100000),
-    m_otime(100000), m_elapsed_time(0)
+    m_game_over(false), m_turn(0), m_state(0), m_times({ 100000, 100000 }),
+    m_elapsed_time(0)
   {
     bool is_matched = false;
     try {
@@ -200,7 +195,7 @@ public:
     m_data_map[id].is_connected = true;
 
     if(m_started) {
-      out_messages.emplace_back(id, get_game_state(id).dump());
+      out_messages.emplace_back(id, get_full_state(id).dump());
     }
   }
 
@@ -215,27 +210,21 @@ public:
     )
   {
     if(m_started && !m_game_over) {
-      if(m_xmove) {
-        m_xtime -= delta_time;
-      } else {
-        m_otime -= delta_time;
-      }
+      m_times[m_turn] -= delta_time;
 
-      if(m_xtime <= 0) {
-        m_xtime = 0;
-        m_state = -1;
-        m_game_over = true;
-      } else if(m_otime <= 0) {
-        m_otime = 0;
-        m_state = 1;
-        m_game_over = true;
+      for(std::size_t i = 0; i < 2; ++i) {
+        if(m_times[i] <= 0) {
+          m_times[i] = 0;
+          m_state = BOARD_VALUES[i];
+          m_game_over = true;
+        }
       }
 
       m_elapsed_time += delta_time;
       if(m_elapsed_time >= 1000) {
         for(player_id player : m_player_list) {
           if(m_data_map[player].is_connected) {
-            out_messages.emplace_back(player, get_time_state(player).dump());
+            out_messages.emplace_back(player, get_time_state().dump());
           }
         }
         m_elapsed_time = 0;
@@ -263,9 +252,19 @@ public:
       if(m_valid && (m_player_list.size() > 1)) {
         m_started = true;
 
+        // 'randomize' which player is Xs and Os
+        auto now = std::chrono::system_clock::now();
+        auto now_us = std::chrono::time_point_cast<std::chrono::microseconds>(now);
+        auto value = now_us.time_since_epoch();
+        long count = value.count();
+
+        if(count % 2 == 0) {
+          std::swap(m_player_list[0], m_player_list[1]);
+        }
+
         for(player_id player : m_player_list) {
           if(m_data_map[player].is_connected) {
-            out_messages.emplace_back(player, get_game_state(player).dump());
+            out_messages.emplace_back(player, get_full_state(player).dump());
           }
         }
       }
@@ -277,9 +276,9 @@ public:
 
     json game_json;
     game_json["board"] = m_board.get_board();
-    game_json["xmove"] = m_xmove;
+    game_json["turn"] = m_turn;
     game_json["moves"] = m_move_list;
-    game_json["times"] = std::vector<long>{ m_xtime, m_otime };
+    game_json["times"] = m_times;
     game_json["state"] = state;
     game_json["done"] = is_done();
     game_json["players"] = m_player_list;
@@ -311,83 +310,55 @@ private:
       unsigned int j = data["move"][1].get<unsigned int>();
 
       if(m_started && !is_done()) {
-        if(id == m_player_list[0]) {
-          if(m_xmove) {
-            if(m_board.add_x(i, j)) {
-              m_xmove = false;
-              m_move_list.push_back(data["move"]);
-              for(player_id player : m_player_list) {
-                if(m_data_map[player].is_connected) {
-                  msg_list.emplace_back(player, get_game_state(player).dump());
-                }
+        if(id == m_player_list[m_turn])
+        {
+          int value = BOARD_VALUES[m_turn];
+          if(m_board.add_move(i, j, value)) {
+            m_turn = (m_turn + 1) % 2;
+            m_move_list.push_back(data["move"]);
+            for(player_id player : m_player_list) {
+              if(m_data_map[player].is_connected) {
+                msg_list.emplace_back(player, get_game_state(player).dump());
               }
-            } else {
-              spdlog::debug(
-                  "player {} sent invalid move: {}", id, data.dump()
-                );
             }
           } else {
             spdlog::debug(
-                "player {} sent move out of turn: {}", id, data.dump()
-              );
-          }
-        } else if(id == m_player_list[1]) {
-          if(!m_xmove) {
-            if(m_board.add_o(i, j)) {
-              m_xmove = true;
-              m_move_list.push_back(data["move"]);
-              for(player_id player : m_player_list) {
-                if(m_data_map[player].is_connected) {
-                  msg_list.emplace_back(player, get_game_state(player).dump());
-                }
-              }
-            } else {
-              spdlog::debug(
-                  "player {} sent invalid move: {}", id, data.dump()
-                );
-            }
-          } else {
-            spdlog::debug(
-                "player {} sent move out of turn: {}", id, data.dump()
+                "player {} sent invalid move: {}", id, data.dump()
               );
           }
         } else {
-          spdlog::error(
-              "player {} sent move but isn't in the game: {}",
-              id,
-              data.dump()
+          spdlog::debug(
+              "player {} sent move out of turn: {}", id, data.dump()
             );
         }
       }
     } catch(json::exception& e) {
-      spdlog::error("player {} sent invalid json", id);
+      spdlog::debug("player {} sent invalid json", id);
     }
   }
 
   json get_game_state(player_id id) const {
-    bool isx = (id == m_player_list.front());
-
     json game_json;
-    game_json["type"] = "game";
     game_json["board"] = m_board.get_board();
-    game_json["time"] = (isx ? m_xtime : m_otime);
-    game_json["opponent_time"] = (isx ? m_otime : m_xtime); 
-    game_json["xmove"] = m_xmove;
+    game_json["times"] = m_times;
+    game_json["turn"] = m_turn;
     game_json["state"] = m_board.get_state() + m_state;
     game_json["done"] = is_done();
-    game_json["your_turn"] = isx ? m_xmove : !m_xmove;
  
     return game_json;
   }
 
-  json get_time_state(player_id id) const {
-    bool isx = (id == m_player_list.front());
+  json get_full_state(player_id id) const {
+    json game_json = get_game_state(id);
+    game_json["player"] = (id == m_player_list.front()) ? 0 : 1;
 
+    return game_json;
+  }
+
+  json get_time_state() const {
     json game_json;
 
-    game_json["type"] = "time";
-    game_json["time"] = (isx ? m_xtime : m_otime);
-    game_json["opponent_time"] = (isx ? m_otime : m_xtime); 
+    game_json["times"] = m_times;
     return game_json;
   }
 
@@ -403,16 +374,18 @@ private:
   bool m_valid;
   bool m_started;
   bool m_game_over;
-  bool m_xmove;
+  int m_turn;
   int m_state;
-  long m_xtime;
-  long m_otime;
+  vector<long> m_times;
   long m_elapsed_time;
 
   vector<json> m_move_list;
 
   tic_tac_toe_board m_board;
 };
+
+
+// MATCHMAKING
 
 class tic_tac_toe_matchmaker {
 public:

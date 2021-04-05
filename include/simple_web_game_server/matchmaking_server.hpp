@@ -153,7 +153,11 @@ namespace simple_web_game_server {
         lock_guard<mutex> guard(m_match_lock);
         m_session_data.clear();
         m_session_players.clear();
-        m_connection_updates.clear();
+        m_connection_updates.second.clear();
+      }
+      {
+        lock_guard<mutex> guard(m_connection_update_list_lock);
+        m_connection_updates.first.clear();
       }
       m_match_condition.notify_one();
     }
@@ -184,7 +188,7 @@ namespace simple_web_game_server {
         if(!m_matchmaker.can_match(m_session_data)) {
           match_lock.unlock();
           unique_lock<mutex> conn_lock(m_connection_update_list_lock);
-          while(m_connection_updates.empty()) {
+          while(m_connection_updates.first.empty()) {
             m_match_condition.wait(conn_lock);
             if(!m_jwt_server.is_running()) {
               return;
@@ -257,14 +261,13 @@ namespace simple_web_game_server {
 
   private:
     vector<session_id> process_connection_updates() {
-      vector<connection_update> connection_updates;
       {
         unique_lock<mutex> conn_lock(m_connection_update_list_lock);
-        std::swap(connection_updates, m_connection_updates);
+        std::swap(m_connection_updates.first, m_connection_updates.second);
       }
 
       vector<session_id> finished_sessions;
-      for(connection_update& update : connection_updates) {
+      for(connection_update& update : m_connection_updates.second) {
         auto it = m_session_data.find(update.id.session);
         if(update.disconnection) {
           if(it != m_session_data.end()) {
@@ -307,6 +310,7 @@ namespace simple_web_game_server {
           }
         }
       }
+      m_connection_updates.second.clear();
 
       return finished_sessions;
     }
@@ -319,7 +323,7 @@ namespace simple_web_game_server {
     void process_message(const combined_id& id, std::string&& data) {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
-        m_connection_updates.emplace_back(id);
+        m_connection_updates.first.emplace_back(id);
       }
       m_match_condition.notify_one();
     }
@@ -327,7 +331,7 @@ namespace simple_web_game_server {
     void player_connect(const combined_id& id, json&& data) {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
-        m_connection_updates.emplace_back(
+        m_connection_updates.first.emplace_back(
             id, std::move(data)
           );
       }
@@ -337,7 +341,7 @@ namespace simple_web_game_server {
     void player_disconnect(const combined_id& id) {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
-        m_connection_updates.emplace_back(id);
+        m_connection_updates.first.emplace_back(id);
       }
       m_match_condition.notify_one();
     }
@@ -349,7 +353,10 @@ namespace simple_web_game_server {
     unordered_map<session_id, set<player_id>, id_hash> m_session_players;
     mutex m_match_lock;
 
-    std::vector<connection_update> m_connection_updates;
+    pair<
+        vector<connection_update>,
+        vector<connection_update>
+      > m_connection_updates;
     mutex m_connection_update_list_lock;
 
     condition_variable m_match_condition;

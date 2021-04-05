@@ -147,14 +147,16 @@ namespace simple_web_game_server {
         lock_guard<mutex> guard(m_game_list_lock);
         m_games.clear();
         m_out_messages.clear();
+        m_connection_updates.second.clear();
+        m_in_messages.second.clear();
       }
       {
         lock_guard<mutex> guard(m_in_message_list_lock);
-        m_in_messages.clear();
+        m_in_messages.first.clear();
       }
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
-        m_connection_updates.clear();
+        m_connection_updates.first.clear();
       }
       {
         lock_guard<mutex> guard(m_game_count_lock);
@@ -193,7 +195,7 @@ namespace simple_web_game_server {
         if(m_games.empty()) {
           game_lock.unlock();
           unique_lock<mutex> conn_lock(m_connection_update_list_lock);
-          while(m_connection_updates.empty()) {
+          while(m_connection_updates.first.empty()) {
             m_game_condition.wait(conn_lock);
             if(!m_jwt_server.is_running()) {
               return;
@@ -260,13 +262,12 @@ namespace simple_web_game_server {
 
   private:
     void process_connection_updates() {
-      vector<connection_update> connection_updates;
       {
         lock_guard<mutex> conn_guard(m_connection_update_list_lock);
-        std::swap(connection_updates, m_connection_updates);
+        std::swap(m_connection_updates.first, m_connection_updates.second);
       }
 
-      for(connection_update& update : connection_updates) {
+      for(connection_update& update : m_connection_updates.second) {
         auto games_it = m_games.find(update.id.session);
         auto out_messages_it = m_out_messages.find(update.id.session);
 
@@ -305,14 +306,14 @@ namespace simple_web_game_server {
           games_it->second.connect(out_messages_it->second, update.id.player);
         }
       }
+
+      m_connection_updates.second.clear();
     }
 
     void process_game_updates(long delta_time) {
-      unordered_map<session_id, vector<message>, id_hash> in_messages;
-      in_messages.reserve(m_games.size());
       {
         lock_guard<mutex> msg_guard(m_in_message_list_lock);
-        std::swap(in_messages, m_in_messages);
+        std::swap(m_in_messages.first, m_in_messages.second);
       }
 
       // game updates are completely independent, so exec in parallel
@@ -321,8 +322,8 @@ namespace simple_web_game_server {
           m_games.begin(),
           m_games.end(),
           [&](auto& key_val_pair){
-            auto in_msg_it = in_messages.find(key_val_pair.first);
-            if(in_msg_it != in_messages.end()) {
+            auto in_msg_it = m_in_messages.second.find(key_val_pair.first);
+            if(in_msg_it != m_in_messages.second.end()) {
               key_val_pair.second.update(
                   m_out_messages.at(key_val_pair.first),
                   in_msg_it->second,
@@ -337,11 +338,13 @@ namespace simple_web_game_server {
             }
           }
         );
+      
+      m_in_messages.second.clear();
     }
 
     void process_message(const combined_id& id, std::string&& data) {
       lock_guard<mutex> msg_guard(m_in_message_list_lock);
-      m_in_messages[id.session].emplace_back(
+      m_in_messages.first[id.session].emplace_back(
           id.player, std::move(data)
         );
     }
@@ -349,7 +352,7 @@ namespace simple_web_game_server {
     void player_connect(const combined_id& id, json&& data) {
       {
         lock_guard<mutex> guard(m_connection_update_list_lock);
-        m_connection_updates.emplace_back(
+        m_connection_updates.first.emplace_back(
             id, std::move(data)
           );
       }
@@ -358,7 +361,7 @@ namespace simple_web_game_server {
 
     void player_disconnect(const combined_id& id) {
       lock_guard<mutex> guard(m_connection_update_list_lock);
-      m_connection_updates.emplace_back(id);
+      m_connection_updates.first.emplace_back(id);
     }
 
     // member variables
@@ -372,14 +375,24 @@ namespace simple_web_game_server {
     std::size_t m_game_count;
     mutex m_game_count_lock;
 
-    unordered_map<
-        session_id,
-        vector<message>,
-        id_hash
+    pair<
+      unordered_map<
+          session_id,
+          vector<message>,
+          id_hash
+        >,
+      unordered_map<
+          session_id,
+          vector<message>,
+          id_hash
+        >
       > m_in_messages;
     mutex m_in_message_list_lock;
 
-    std::vector<connection_update> m_connection_updates;
+    pair<
+        vector<connection_update>,
+        vector<connection_update>
+      > m_connection_updates;
     mutex m_connection_update_list_lock;
 
     condition_variable m_game_condition;

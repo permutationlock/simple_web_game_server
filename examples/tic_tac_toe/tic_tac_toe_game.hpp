@@ -254,7 +254,7 @@ public:
 
         // 'randomize' which player is Xs and Os
         auto now = std::chrono::system_clock::now();
-        auto now_us = std::chrono::time_point_cast<std::chrono::microseconds>(now);
+        auto now_us = std::chrono::time_point_cast<std::chrono::milliseconds>(now);
         auto value = now_us.time_since_epoch();
         long count = value.count();
 
@@ -440,7 +440,8 @@ public:
         }
         int min_score = 100000;
         session_id partner;
-        for(auto it2 = ++it1; it2 != session_map.end(); ++it2) {
+        auto temp = it1;
+        for(auto it2 = ++temp; it2 != session_map.end(); ++it2) {
           if(matched.count(it2->first) > 0) {
             continue;
           }
@@ -450,6 +451,7 @@ public:
             min_score = score;
           }
         }
+
         if(min_score <= 250) {
           game_list.emplace_back(
             game{

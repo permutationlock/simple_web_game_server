@@ -82,6 +82,10 @@ that time.
    a full implementation of a competitive tic tac toe game with elo ranking,
    matchmaking, and allowing for clients to reconnect to games.
 
+#### Games using this library
+
+ - [Krynth.io](https://krynth.io): a one-one-one competitive deduction game.
+
 #### Basic idea of code structure
 
 The base server class wraps a

@@ -24,18 +24,19 @@ The core motivation for the libarary is to:
    beyond messages to clients;
  - be performant and allow both horizontal and vertical scaling.
 
-With regards to the first two points, in order to create a backend for a game
+In order to create a backend for a game,
 all that needs to be written is a specification for the JWTs you want to
 verify, a class describing the game logic, and a class detailing the
 matchmaking algorithm; see examples below.
 
-Security is achieved by supporting TLS and requiring that a client's first
-message when they connect contain a JWT verifying their identity and detailing
+Security is achieved by via TLS and the WSS protocol. Clients must also
+initiate each connection to the server with a JWT
+containing their identity and detailing
 their intended session with the server.
 
-With regards point four and server isolation, by default the servers in this
-library only listen and communicate to clients, and make no other external 
-communication such as updating a databases.
+With regards point four and server isolation, the servers in this
+library are designed to only listen and communicate to clients, and to
+make no other external communication, such as updating a databases.
 Each time a server session is completed, the server will send each
 associated client a token verifying the result. Thus, if it is desired that server
 activity be tracked, for example to track ranked matches in a

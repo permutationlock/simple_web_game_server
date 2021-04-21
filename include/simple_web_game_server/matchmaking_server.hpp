@@ -180,7 +180,7 @@ namespace simple_web_game_server {
 
     void match_players(std::chrono::milliseconds timestep) {
       auto time_start = clock::now();
-      vector<session_id> finished_sessions;
+      pair<vector<session_id>, vector<session_id> > finished_sessions;
 
       while(m_jwt_server.is_running()) {
         unique_lock<mutex> match_lock(m_match_lock);
@@ -208,20 +208,18 @@ namespace simple_web_game_server {
           std::this_thread::sleep_for(std::min(1us, timestep-delta_time+1us));
         } else {
           time_start = clock::now();
-          {
-            vector<session_id> new_finished_sessions
-              = process_connection_updates();
 
-            // we remove data here to catch any possible players submitting
-            // connections in the last timestep when the session ends
-            for(const session_id& sid : finished_sessions) {
-              spdlog::trace("erasing data for session {}", sid);
-              m_session_data.erase(sid);
-              m_session_players.erase(sid);
-            }
+          process_connection_updates(finished_sessions.second);
 
-            std::swap(finished_sessions, new_finished_sessions);
+          // we remove data here to catch any possible players submitting
+          // connections in the last timestep when the session ends
+          for(const session_id& sid : finished_sessions.first) {
+            spdlog::trace("erasing data for session {}", sid);
+            m_session_data.erase(sid);
+            m_session_players.erase(sid);
           }
+          finished_sessions.first.clear();
+          std::swap(finished_sessions.first, finished_sessions.second);
 
           vector<game> games;
           {
@@ -252,7 +250,7 @@ namespace simple_web_game_server {
               m_jwt_server.complete_session(
                   sid, game_sid, game_data
                 );
-              finished_sessions.push_back(sid);
+              finished_sessions.first.push_back(sid);
             }
           }
         }
@@ -260,13 +258,12 @@ namespace simple_web_game_server {
     }
 
   private:
-    vector<session_id> process_connection_updates() {
+    void process_connection_updates(vector<session_id>& finished_sessions) {
       {
         unique_lock<mutex> conn_lock(m_connection_update_list_lock);
         std::swap(m_connection_updates.first, m_connection_updates.second);
       }
 
-      vector<session_id> finished_sessions;
       for(connection_update& update : m_connection_updates.second) {
         auto it = m_session_data.find(update.id.session);
         if(update.disconnection) {
@@ -311,8 +308,6 @@ namespace simple_web_game_server {
         }
       }
       m_connection_updates.second.clear();
-
-      return finished_sessions;
     }
 
     // proper procedure for client to cancel matchmaking is to send a message

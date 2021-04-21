@@ -50,13 +50,12 @@ Since servers run completely independently, it is easy to achieve horizontal
 scaling by simply spinning up as many servers as desired and then pointing new
 clients to them with the appropriate JWT authentication.
 
-Vertical scaling is accomplished by allowing multi-threading in each
-aspect of the server: multiple threads may be assigned to handle WebSocket
-connections and messages, multiple threads may handle processing server
+Vertical scaling is accomplished by allowing for multi-threading in several
+aspects of the server: multiple threads may be assigned to handle WebSocket
+connections and server
 actions, and the game update loop may update games in parallel.
-However, in most the only parallelization that will
-benefit performance is processing game updates, and that is what is implemented
-in examples.
+However, in most cases the only parallelization that will potentially
+benefit performance is in processing game updates.
 
 #### Latency and performance
 

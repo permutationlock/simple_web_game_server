@@ -272,7 +272,7 @@ namespace simple_web_game_server {
         if(update.disconnection) {
           if(it != m_session_data.end()) {
             spdlog::trace(
-                "processiong disconnection for session {}", update.id.session
+                "processing disconnection for session {}", update.id.session
               );
             m_jwt_server.complete_session(
                 update.id.session,
@@ -285,7 +285,7 @@ namespace simple_web_game_server {
           }
         } else {
           spdlog::trace(
-              "processiong connection for session {}", update.id.session
+              "processing connection for session {}", update.id.session
             );
           if(it == m_session_data.end()) {
             session_data data{update.data};

@@ -276,12 +276,15 @@ function updateRatings(players: [number,number], scores: [number,number]) {
         let ratings: [ number, number ] = [
             docs[0].rating, docs[1].rating
           ];
+        if(docs[0].pid == players[1]) {
+          scores = [ scores[1], scores[0] ];
+        }
         let newRatings = computeRatingChange(
             ratings, scores, 32
           );
-        players.forEach((player: number, i: number) => {
+        docs.forEach((doc: UserDBItem, i: number) => {
           userDB.update(
-            { pid: player },
+            { pid: doc.pid },
             { $set: { rating: Math.trunc(newRatings[i]) } },
             myUpdateOpts,
             (err, doc) => {}

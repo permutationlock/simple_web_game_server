@@ -154,6 +154,30 @@ class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
       );
     };
 
+    let renderRow = (row: number, columns: number) => {
+      let data: React.ReactNodeArray = [];
+      for(let i = 0; i < columns; ++i) {
+        data.push(renderSquare(row * columns + i));
+      }
+
+      return data;
+    };
+
+    let renderBoard = (rows: number, columns: number) => {
+      let data: React.ReactNodeArray = [];
+      data.push();
+
+      for(let i = 0; i < columns; ++i) {
+        data.push(
+          <div className="TicTacToe-board-row">
+            {renderRow(i, columns)}
+          </div>
+        );
+      }
+
+      return data;
+    };
+
     return (
       <div className="TicTacToe">
         <div className="TicTacToe-game">
@@ -163,21 +187,7 @@ class TicTacToe extends React.Component<TicTacToeProps, TicTacToeState> {
             isX={isX}
             state={this.props.gameData.state}
           />
-          <div className="TicTacToe-board-row">
-            {renderSquare(0)}
-            {renderSquare(1)}
-            {renderSquare(2)}
-          </div>
-          <div className="TicTacToe-board-row">
-            {renderSquare(3)}
-            {renderSquare(4)}
-            {renderSquare(5)}
-          </div>
-          <div className="TicTacToe-board-row">
-            {renderSquare(6)}
-            {renderSquare(7)}
-            {renderSquare(8)}
-          </div>
+          {renderBoard(3,3)}
           <div className="TicTacToe-timers">
             <Timer name="You" time={this.props.gameData.times[player]} />
             <Timer name="Opponent"

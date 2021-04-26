@@ -25,7 +25,7 @@ The core motivation for the libarary is to:
  - be performant and allow both horizontal and vertical scaling.
 
 In order to create a backend for a game,
-all that needs to be written is a specification for the JWTs you want to
+all that needs to be written is a specification for the JWTs that you want to
 verify, a class describing the game logic, and a class detailing the
 matchmaking algorithm; see examples below.
 
@@ -74,7 +74,7 @@ should come from processing game updates.
 
  - [Krynth.io](https://krynth.io): a one-one-one competitive deduction game.
 
-#### Basic idea of code structure
+#### Basic functionality
 
 The base server class wraps a
 [WebSocket++](https://github.com/zaphoyd/websocketpp) server and provides JWT

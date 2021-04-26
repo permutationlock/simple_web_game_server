@@ -94,29 +94,17 @@ class Home extends React.Component<HomeProps, HomeState> {
     }
   }
 
-  logout() {
-    sessionStorage.removeItem("token");
-    this.setState({
-      token: null,
-      disabled: true,
-      pid: null,
-      rating: null
-    });
-    this.login();
-  }
-
   render() {
     return (
       <div className='Home'>
         <PlayerInfo pid={this.state.pid} rating={this.state.rating}/>
-        <button disabled={this.state.disabled}
-          onClick={this.handleClick.bind(this)}>
+        <button
+          className="Home-play-button"
+          disabled={this.state.disabled}
+          onClick={this.handleClick.bind(this)}
+        >
           Match
         </button><br/>
-        <button disabled={this.state.disabled}
-          onClick={this.logout.bind(this)}>
-          New Account
-        </button>
       </div>
     );
   }

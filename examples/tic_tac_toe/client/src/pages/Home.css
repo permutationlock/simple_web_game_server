@@ -1,3 +1,7 @@
 .Home {
   text-align: center;
 }
+
+.Home-play-button {
+  margin: 5px;
+}

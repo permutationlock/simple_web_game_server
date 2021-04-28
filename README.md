@@ -15,7 +15,7 @@ The source code is available on
 
 You must have a C++14 compatible compiler as well as have the
 [ASIO](https://think-async.com/Asio/) library installed in some form.
-Parallelization of game updates uses the C++17 <execution> header, so a C++17
+Parallelization of game updates uses the C++17 std::execution header, so a C++17
 compatible compiler is required for that feature.
 
 #### Motivation

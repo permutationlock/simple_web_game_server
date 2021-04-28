@@ -27,7 +27,10 @@
 
 #include <chrono>
 #include <algorithm>
-#include <execution>
+
+#if __cpp_lib_execution >= 201603
+  #include <execution>
+#endif
 
 namespace simple_web_game_server {
   // time literals to initialize time-step variables
@@ -314,7 +317,9 @@ namespace simple_web_game_server {
 
       // game updates are completely independent, so exec in parallel
       std::for_each(
-          std::execution::par,
+          #if __cpp_lib_execution >= 201603
+            std::execution::par,
+          #endif
           m_games.begin(),
           m_games.end(),
           [&](auto& key_val_pair){

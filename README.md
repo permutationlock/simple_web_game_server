@@ -11,7 +11,7 @@ The source code is available on
 [Doxygen](https://www.doxygen.nl/index.html) documentation is available
 [here](https://permutationlock.com/simple_web_game_server/).
 
-### Dependencies
+#### Dependencies
 
 You must have [ASIO](https://think-async.com/Asio/) installed in some form.
 

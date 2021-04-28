@@ -14,9 +14,6 @@ The source code is available on
 ### Dependencies
 
 You must have [ASIO](https://think-async.com/Asio/) installed in some form.
-The current build files assume that
-you have the [Boost](https://www.boost.org/) libraries, but it is possible to
-use [ASIO](https://think-async.com/Asio/) stand alone.
 
 #### Motivation
 

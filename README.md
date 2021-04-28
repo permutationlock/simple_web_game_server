@@ -11,6 +11,13 @@ The source code is available on
 [Doxygen](https://www.doxygen.nl/index.html) documentation is available
 [here](https://permutationlock.com/simple_web_game_server/).
 
+### Dependencies
+
+You must have [ASIO](https://think-async.com/Asio/) installed in some form.
+The current build files assume that
+you have the [Boost](https://www.boost.org/) libraries, but it is possible to
+use [ASIO](https://think-async.com/Asio/) stand alone.
+
 #### Motivation
 
 The core motivation for the libarary is to:

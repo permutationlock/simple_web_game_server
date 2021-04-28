@@ -14,6 +14,7 @@ This directory contains two nested TypeScript applications:
 Executing
 
 ```shell
+ npm install
  npm start
 ```
 

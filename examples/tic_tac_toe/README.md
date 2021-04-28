@@ -17,30 +17,31 @@ achieve this for localhost I recommend installing
 certificate key pair:
 
 ```shell
-mkcert -key-file key.pem -cert-file cert.pem localhost
+ mkcert -key-file key.pem -cert-file cert.pem localhost
 ```
 
 To run the client:
 
 ```shell
-cd client
-npm start
+ cd client
+ npm install
+ npm start
 ```
 
 To run the matchmaking server:
 
 ```shell
-cd server
-make
-./matchmaking_server
+ cd server
+ make
+ ./matchmaking_server
 ```
 
 To run the game server:
 
 ```shell
-cd game_server
-make
-./game_server
+ cd game_server
+ make
+ ./game_server
 ```
 
 Once all three are running, go to

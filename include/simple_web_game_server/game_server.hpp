@@ -159,7 +159,6 @@ namespace simple_web_game_server {
         m_connection_updates.first.clear();
       }
       {
-        lock_guard<mutex> guard(m_game_count_lock);
         m_game_count = 0;
       }
     }
@@ -215,7 +214,6 @@ namespace simple_web_game_server {
           // we remove game data here to catch any possible players submitting
           // new connections in the last time-step when the game session ends
           {
-            lock_guard<mutex> gc_guard(m_game_count_lock);
             for(session_id sid : finished_games) {
               spdlog::trace("erasing game session {}", sid);
               m_out_messages.erase(sid);
@@ -256,7 +254,6 @@ namespace simple_web_game_server {
 
     /// Returns the number of running game sessions.
     std::size_t get_game_count() {
-      lock_guard<mutex> guard(m_game_count_lock);
       return m_game_count;
     }
 
@@ -298,7 +295,6 @@ namespace simple_web_game_server {
                 update.id.session, vector<message>{}
               ).first;
             {
-              lock_guard<mutex> gc_guard(m_game_count_lock);
               ++m_game_count;
             }
           }
@@ -372,8 +368,7 @@ namespace simple_web_game_server {
       > m_games;
     mutex m_game_list_lock;
 
-    std::size_t m_game_count;
-    mutex m_game_count_lock;
+    atomic<std::size_t> m_game_count;
 
     pair<
       unordered_map<

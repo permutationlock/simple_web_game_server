@@ -331,7 +331,6 @@ namespace simple_web_game_server {
           lock_guard<mutex> action_guard(m_action_lock);
           lock_guard<mutex> session_guard(m_session_lock);
           lock_guard<mutex> conn_guard(m_connection_lock);
-          lock_guard<mutex> pc_guard(m_player_count_lock);
 
           // collect all unresolved connection actions
           while(!m_actions.empty()) {
@@ -460,7 +459,6 @@ namespace simple_web_game_server {
 
     /// Returns the number of verified clients connected.
     std::size_t get_player_count() {
-      lock_guard<mutex> guard(m_player_count_lock);
       return m_player_count;
     }
 
@@ -566,7 +564,6 @@ namespace simple_web_game_server {
         }
       }
       {
-        lock_guard<mutex> pc_guard(m_player_count_lock);
         --m_player_count;
       }
 
@@ -676,7 +673,6 @@ namespace simple_web_game_server {
         m_connection_ids.erase(id_connections_it->second);
         m_id_connections.erase(id_connections_it);
       } else {
-        lock_guard<mutex> pc_guard(m_player_count_lock);
         ++m_player_count;
       }
 
@@ -786,8 +782,7 @@ namespace simple_web_game_server {
     mutex m_action_lock;        // m_action_lock guards the member m_actions
     condition_variable m_action_cond;
 
-    std::size_t m_player_count;
-    mutex m_player_count_lock;  // m_player_count_lock guards the member m_player_count
+    atomic<std::size_t> m_player_count;
 
     // functions to handle client actions
     function<void(const combined_id&, json&&)> m_handle_open;

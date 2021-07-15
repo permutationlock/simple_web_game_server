@@ -37,6 +37,12 @@ struct test_player_traits {
       }
     };
 
+    template<typename value>
+    using map = std::unordered_map<id, value, hash>;
+
+    template<typename value>
+    using session_id_map = std::unordered_map<session_id, value, hash>;
+
     id() : player(0), session(0) {}
     id(player_id p, session_id s) : player(p), session(s) {}
 
@@ -141,7 +147,6 @@ class test_matchmaker {
 public:
   using player_traits = test_player_traits;
   using session_id = player_traits::id::session_id;
-  using id_hash = player_traits::id::hash;
   using message = std::pair<session_id, std::string>;
   using game = std::tuple<std::vector<session_id>, session_id, json>;
 
@@ -153,10 +158,12 @@ public:
     }
   };
 
+  using session_data_map = typename player_traits::id::session_id_map<session_data>;
+
   test_matchmaker() : m_sid_count(0) {}
 
   bool can_match(
-      const unordered_map<session_id, session_data, id_hash>& session_map
+      const session_data_map& session_map
     )
   {
     return session_map.size() > 1;
@@ -165,7 +172,7 @@ public:
   void match(
       vector<game>& game_list,
       vector<message>& messages,
-      const unordered_map<session_id, session_data, id_hash>& session_map,
+      const session_data_map& session_map,
       long delta_time
     )
   {

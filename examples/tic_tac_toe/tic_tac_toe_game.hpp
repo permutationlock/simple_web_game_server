@@ -143,6 +143,12 @@ struct tic_tac_toe_player_traits {
       }
     };
 
+    template<typename value>
+    using map = std::unordered_map<id, value, hash>;
+
+    template<typename value>
+    using session_id_map = std::unordered_map<session_id, value, hash>;
+
     id() {}
     id(player_id p, session_id s) : player(p), session(s) {}
 
@@ -391,7 +397,6 @@ class tic_tac_toe_matchmaker {
 public:
   using player_traits = tic_tac_toe_player_traits;
   using session_id = player_traits::id::session_id;
-  using id_hash = player_traits::id::hash;
   using message = std::pair<session_id, std::string>;
   using game = std::tuple<std::vector<session_id>, session_id, json>;
 
@@ -416,17 +421,16 @@ public:
     bool m_valid;
   };
 
-  bool can_match(
-      const unordered_map<session_id, session_data, id_hash>& session_map
-    )
-  {
+  using session_data_map = typename player_traits::id::session_id_map<session_data>;
+
+  bool can_match(const session_data_map& session_map) {
     return session_map.size() > 1;
   }
 
   void match(
       vector<game>& game_list,
       vector<message>& messages,
-      const unordered_map<session_id, session_data, id_hash>& session_map,
+      const session_data_map& session_map,
       long delta_time
     )
   {

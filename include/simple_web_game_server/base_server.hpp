@@ -35,7 +35,6 @@
 #include <queue>
 #include <set>
 #include <map>
-#include <unordered_map>
 
 #include <utility>
 
@@ -58,7 +57,6 @@ namespace simple_web_game_server {
   using std::pair;
   using std::set;
   using std::map;
-  using std::unordered_map;
   using std::queue;
 
   // functional types
@@ -122,8 +120,12 @@ namespace simple_web_game_server {
     using player_id = typename combined_id::player_id;
     /// The type of the session component of a client id.
     using session_id = typename combined_id::session_id;
-    /// The type of the hash struct for all id types.
-    using id_hash = typename combined_id::hash;
+    /// The template type of a map with combined_id valued keys.
+    template<typename value>
+    using combined_id_map = typename combined_id::map<value>;
+    /// The template type of a map with session_id valued keys.
+    template<typename value>
+    using session_id_map = typename combined_id::session_id_map<value>;
 
     /// The type of a json object
     using json = typename json_traits::json;
@@ -760,7 +762,7 @@ namespace simple_web_game_server {
         combined_id,
         std::owner_less<connection_hdl>
       > m_connection_ids;
-    unordered_map<combined_id, connection_hdl, id_hash> m_id_connections;
+    combined_id_map<connection_hdl> m_id_connections;
 
     // m_connection_lock guards the members m_new_connections,
     // m_id_connections, and m_connection_ids
@@ -769,10 +771,8 @@ namespace simple_web_game_server {
     time_point m_last_session_update_time;
     std::chrono::milliseconds m_session_release_time;
 
-    buffered_map<
-        unordered_map<session_id, session_data, id_hash>
-      > m_locked_sessions;
-    unordered_map<session_id, set<player_id>, id_hash> m_session_players;
+    buffered_map<session_id_map<session_data> > m_locked_sessions;
+    session_id_map<set<player_id> > m_session_players;
 
     // m_session_lock guards the members m_locked_sessions, and
     // m_session_players

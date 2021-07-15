@@ -25,7 +25,6 @@
 
 #include "base_server.hpp"
 
-#include <unordered_set>
 #include <chrono>
 #include <functional>
 #include <tuple>
@@ -33,9 +32,6 @@
 namespace simple_web_game_server {
   // Time literals to initialize timestep variables
   using namespace std::chrono_literals;
-
-  // datatype implementations
-  using std::unordered_set;
 
   /// A matchmaking server built on the base_server class.
   /**
@@ -58,7 +54,8 @@ namespace simple_web_game_server {
     using combined_id = typename jwt_base_server::combined_id;
     using player_id = typename jwt_base_server::player_id;
     using session_id = typename jwt_base_server::session_id;
-    using id_hash = typename jwt_base_server::id_hash;
+    template<typename value>
+    using session_id_map = typename jwt_base_server::session_id_map<value>;
  
     using json = typename jwt_base_server::json;
     using clock = typename jwt_base_server::clock;
@@ -344,8 +341,8 @@ namespace simple_web_game_server {
     // member variables
     matchmaker m_matchmaker;
 
-    unordered_map<session_id, session_data, id_hash> m_session_data;
-    unordered_map<session_id, set<player_id>, id_hash> m_session_players;
+    session_id_map<session_data> m_session_data;
+    session_id_map<set<player_id> > m_session_players;
     mutex m_match_lock;
 
     pair<

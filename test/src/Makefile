@@ -1,5 +1,5 @@
 CXX      = g++
-CXXFLAGS = -O0 -Wall -std=c++17 -pthread -lssl -lcrypto -ltbb
+CXXFLAGS = -O0 -Wall -std=c++14 -pthread -lssl -lcrypto -ltbb
 INCLUDES = -I../../include -I../../shared -I../include
 
 TARGET = run_tests

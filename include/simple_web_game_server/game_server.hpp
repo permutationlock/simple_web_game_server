@@ -57,7 +57,8 @@ namespace simple_web_game_server {
     using combined_id = typename jwt_base_server::combined_id;
     using player_id = typename jwt_base_server::player_id;
     using session_id = typename jwt_base_server::session_id;
-    using id_hash = typename jwt_base_server::id_hash;
+    template<typename value>
+    using session_id_map = typename jwt_base_server::session_id_map<value>;
 
     using message = pair<player_id, std::string>;
 
@@ -366,26 +367,14 @@ namespace simple_web_game_server {
     }
 
     // member variables
-    unordered_map<
-        session_id,
-        game_instance,
-        id_hash
-      > m_games;
+    session_id_map<game_instance> m_games;
     mutex m_game_list_lock;
 
     atomic<std::size_t> m_game_count;
 
     pair<
-      unordered_map<
-          session_id,
-          vector<message>,
-          id_hash
-        >,
-      unordered_map<
-          session_id,
-          vector<message>,
-          id_hash
-        >
+        session_id_map<vector<message> >,
+        session_id_map<vector<message> >
       > m_in_messages;
     mutex m_in_message_list_lock;
 
@@ -397,7 +386,7 @@ namespace simple_web_game_server {
 
     condition_variable m_game_condition;
 
-    unordered_map<session_id, vector<message>, id_hash> m_out_messages;
+    session_id_map<vector<message> > m_out_messages;
 
     jwt_base_server m_jwt_server;
   };

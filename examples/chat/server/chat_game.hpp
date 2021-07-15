@@ -26,6 +26,12 @@ struct chat_player_traits {
       }
     };
 
+    template<typename value>
+    using map = std::unordered_map<id, value, hash>;
+
+    template<typename value>
+    using session_id_map = std::unordered_map<session_id, value, hash>;
+
     id() {}
     id(const player_id& p, const session_id& s) : player(p), session(s) {}
 

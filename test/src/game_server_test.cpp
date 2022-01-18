@@ -54,7 +54,7 @@ void create_game_tokens(
           .sign(jwt::algorithm::hs256{secret}));
       }
       players.clear();
-      sid++;
+      ++sid;
     }
   }
 }

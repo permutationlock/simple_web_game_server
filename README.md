@@ -1,5 +1,10 @@
 ### Simple Web Game Server
 
+*Disclaimer: I have learned a lot since I originally created this library, and I
+would not recommend it for anything other than educational purposes. The library
+should still work though, and I used it to host a game server for ~2 years of
+continuous uptime with no issues.*
+
 This project provides generic C++ classes to create multi-threaded game servers
 and matchmaking servers for browser games using WebSockets and JWT
 authentication. It is built

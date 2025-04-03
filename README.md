@@ -18,10 +18,8 @@ The source code is available on
 
 #### Dependencies
 
-You must have a C++14 compatible compiler as well as have the
-[ASIO](https://think-async.com/Asio/) library installed in some form.
-Parallelization of game updates uses the C++17 std::execution header, so a C++17
-compatible compiler is required for that feature.
+You must have a C++17 compatible compiler, and `libcrypto` and
+`libssl` system libraries.
 
 #### Motivation
 
@@ -75,16 +73,9 @@ should come from processing game updates.
 
  - [Minimal Template](https://github.com/permutationlock/simple_web_game_server/tree/main/examples/minimal_template):
    minimal examples of game and matchmaking servers, with and without TLS.
- - [Chat](https://github.com/permutationlock/simple_web_game_server/tree/main/examples/chat):
-   a simple chat server displaying the basic features of the game server
-   and the player/session id system.
  - [Tic Tac Toe](https://github.com/permutationlock/simple_web_game_server/tree/main/examples/tic_tac_toe):
    a full implementation of a competitive tic tac toe game with elo ranking,
    matchmaking, and allowing for clients to reconnect to games.
-
-#### Games using this library
-
- - [Krynth.io](https://krynth.io): a one-one-one competitive deduction game.
 
 #### Basic functionality
 

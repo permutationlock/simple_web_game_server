@@ -3,12 +3,11 @@
 This folder contains an example Tic Tac Toe web game, useful to see how to set
 up a full game system with matchmaking and game reporting. The
 game_server folder contains C++ code
-for the Tic Tac Toe WebSocket game server, the matchmaking_server folder
-contains the corresponding matchmaking server, and the client directory
+for the Tic Tac Toe WebSocket game server. The matchmaking_server folder
+contains the corresponding matchmaking server that also serves the web
+application. The client sub-directory
 contains a [React](https://reactjs.org/)
-client and [Express.js](https://expressjs.com/) web server to serve the
-frontend for the Tic Tac Toe app, issue JWTs for the matchmaker, verify JWTs
-for game results, and run a few other features.
+client Tic Tac Toe app.
 
 Because this app uses TLS for the HTTPS and WSS protocols, you must have an
 authorized certificate for the domain name where you serve the application. To
@@ -20,23 +19,15 @@ certificate key pair:
  mkcert -key-file key.pem -cert-file cert.pem localhost
 ```
 
-To run the client:
+To build and run the web + matchmaking server:
 
 ```shell
- cd client
- npm install
- npm start
-```
-
-To run the matchmaking server:
-
-```shell
- cd server
+ cd matchmaking_server
  make
  ./matchmaking_server
 ```
 
-To run the game server:
+To build and run the game server:
 
 ```shell
  cd game_server
@@ -44,6 +35,6 @@ To run the game server:
  ./game_server
 ```
 
-Once all three are running, go to
+Once both are running, go to
 [https://localhost:9092](https://localhost:9092) in any
 browser to access the app.

@@ -55,7 +55,8 @@ namespace simple_web_game_server {
     using player_id = typename jwt_base_server::player_id;
     using session_id = typename jwt_base_server::session_id;
     template<typename value>
-    using session_id_map = typename jwt_base_server::session_id_map<value>;
+    using session_id_map = typename jwt_base_server::template
+      session_id_map<value>;
  
     using json = typename jwt_base_server::json;
     using clock = typename jwt_base_server::clock;
@@ -80,6 +81,8 @@ namespace simple_web_game_server {
 
   // main class body
   public:
+    using connection_ptr = typename jwt_base_server::connection_ptr;
+
     /// The constructor for the matchmaking_server class.
     /**
      * The parameters are
@@ -121,6 +124,11 @@ namespace simple_web_game_server {
         const jwt::verifier<jwt_clock, json_traits>& v,
         function<std::string(const combined_id&, const json&)> f
       ) : matchmaking_server{v, f, 3600s} {}
+
+    /// Sets the http_handler for the underlying base_server.
+    void set_http_handler(function<void(connection_ptr)> f) {
+      m_jwt_server.set_http_handler(f);
+    }
 
     /// Sets the tls_init_handler for the underlying base_server.
     void set_tls_init_handler(function<ssl_context_ptr(connection_hdl)> f) {

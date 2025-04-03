@@ -1,6 +1,8 @@
-CXX      = g++
-CXXFLAGS = -O1 -Wall -std=c++17 -pthread -lssl -lcrypto -ltbb
-INCLUDES = -I../../../include -I../../../shared
+CXX      = clang++
+CXXFLAGS = -O1 -std=c++17 -DASIO_STANDALONE \
+	-Wall -Wno-deprecated-declarations -Wno-unused-private-field
+LDFLAGS = -lpthread -lssl -lcrypto
+INCLUDES = -I../../../deps/include -I../../../include -I../../../shared
 
 TARGET = game_server
 SRCS   = game_server.cpp

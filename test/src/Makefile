@@ -1,6 +1,8 @@
-CXX      = g++
-CXXFLAGS = -O0 -Wall -std=c++14 -pthread -lssl -lcrypto -ltbb
-INCLUDES = -I../../include -I../../shared -I../include
+CXX      = clang++
+CXXFLAGS = -O1 -std=c++17 -DASIO_STANDALONE \
+	-Wall -Wno-deprecated-declarations -Wno-unused-private-field
+LDFLAGS = -lpthread -lssl -lcrypto
+INCLUDES = -I../../deps/include -I../../include -I../../shared -I../include
 
 TARGET = run_tests
 SRCS   = main.cpp client_test.cpp test_game_test.cpp game_server_test.cpp matchmaking_server_test.cpp

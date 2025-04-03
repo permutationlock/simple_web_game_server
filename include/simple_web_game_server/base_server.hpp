@@ -34,6 +34,7 @@
 #include <vector>
 #include <queue>
 #include <set>
+#include <string>
 #include <map>
 
 #include <utility>
@@ -114,6 +115,11 @@ namespace simple_web_game_server {
       explicit server_error(const char* what_arg) noexcept : super(what_arg) {}
     };
 
+    /// The type of the websocket server.
+    using ws_server = websocketpp::server<server_config>;
+    using message_ptr = typename ws_server::message_ptr;
+    using connection_ptr = typename ws_server::connection_type::ptr;
+
     /// The type of a client id.
     using combined_id = typename player_traits::id; 
     /// The type of the player component of a client id.
@@ -122,10 +128,10 @@ namespace simple_web_game_server {
     using session_id = typename combined_id::session_id;
     /// The template type of a map with combined_id valued keys.
     template<typename value>
-    using combined_id_map = typename combined_id::map<value>;
+    using combined_id_map = typename combined_id::template map<value>;
     /// The template type of a map with session_id valued keys.
     template<typename value>
-    using session_id_map = typename combined_id::session_id_map<value>;
+    using session_id_map = typename combined_id::template session_id_map<value>;
 
     /// The type of a json object
     using json = typename json_traits::json;
@@ -147,10 +153,6 @@ namespace simple_web_game_server {
       OUT_MESSAGE,
       CLOSE_CONNECTION
     };
-
-    /// The type of the websocket server.
-    using ws_server = websocketpp::server<server_config>;
-    using message_ptr = typename ws_server::message_ptr;
 
     /// The type of an action that may be submitted to queue for the worker
     /// threads running the process_messages() loop.
@@ -241,6 +243,7 @@ namespace simple_web_game_server {
         std::chrono::milliseconds t
       ) : m_is_running(false), m_jwt_verifier(v), m_get_result_str(f),
           m_session_release_time(t), m_player_count(0),
+          m_handle_http([](connection_ptr){}),
           m_handle_open([](const combined_id&, json&&){}),
           m_handle_close([](const combined_id&){}),
           m_handle_message([](const combined_id&, std::string&&){})
@@ -255,6 +258,17 @@ namespace simple_web_game_server {
           bind(&base_server::on_message, this, simple_web_game_server::_1,
             simple_web_game_server::_2)
         );
+    }
+
+    /// Sets a the given function f as the http_handler for m_server.
+    void set_http_handler(function<void(connection_ptr)> f) {
+      if (!m_is_running) {
+        m_handle_http = f;
+        m_server.set_http_handler(bind(&base_server::on_http, this,
+          simple_web_game_server::_1));
+      } else {
+        throw server_error{"set_http_handler called on running server"};
+      }
     }
 
     /// Sets a the given function f as the tls_init_handler for m_server.
@@ -614,6 +628,18 @@ namespace simple_web_game_server {
       }
     }
 
+    void on_http(connection_hdl hdl) {
+      if (m_is_running) {
+        try {
+          connection_ptr conn = m_server.get_con_from_hdl(hdl);
+          m_handle_http(conn);
+        } catch (std::exception& e) {
+          spdlog::debug("error getting http connection: {}",
+              e.what());        
+        }
+      }
+    }
+
     void on_open(connection_hdl hdl) {
       {
         lock_guard<mutex> guard(m_action_lock);
@@ -785,6 +811,7 @@ namespace simple_web_game_server {
     atomic<std::size_t> m_player_count;
 
     // functions to handle client actions
+    function<void(connection_ptr)> m_handle_http;
     function<void(const combined_id&, json&&)> m_handle_open;
     function<void(const combined_id&)> m_handle_close;
     function<void(const combined_id&, std::string&&)> m_handle_message;

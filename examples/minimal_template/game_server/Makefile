@@ -1,5 +1,7 @@
-CXX      = g++
-CXXFLAGS = -O1 -Wall -std=c++17 -pthread -lssl -lcrypto -ltbb
+CXX      = clang++
+CXXFLAGS = -O1 -std=c++17 -DASIO_STANDALONE \
+	-Wall -Wno-deprecated-declarations -Wno-unused-private-field
+LDFLAGS = -lpthread -lssl -lcrypto
 INCLUDES = -I../../../include -I../../../shared
 
 TARGET = game_server
@@ -12,7 +14,7 @@ DEPS   = $(SRCS:.cpp=.depends)
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-		$(CXX) $(INCLUDES) $(CXXFLAGS) $(LDFLAGS) $(OBJS) -o $(TARGET)
+		$(CXX) $(INCLUDES) $(LDFLAGS) $(OBJS) -o $(TARGET)
 
 .cpp.o:
 		$(CXX) $(INCLUDES) $(CXXFLAGS) -c $< -o $@

@@ -9,6 +9,11 @@ application. The client sub-directory
 contains a [React](https://reactjs.org/)
 client Tic Tac Toe app.
 
+*My apologies for the npm dependency garbage, I wrote this back when I
+was learning React because I thought I might want a web programming job.
+It should be re-written it in plain JavaScript at some point, but I have
+better things to do.
+
 Because this app uses TLS for the HTTPS and WSS protocols, you must have an
 authorized certificate for the domain name where you serve the application. To
 achieve this for localhost I recommend installing

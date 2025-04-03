@@ -1,6 +1,7 @@
 CXX      = clang++
 CXXFLAGS = -O1 -std=c++17 -DASIO_STANDALONE \
-	-Wall -Wno-deprecated-declarations -Wno-unused-private-field
+	-Wall -Wno-deprecated-declarations -Wno-unused-private-field \
+	-Wno-template-id-cdtor
 LDFLAGS = -lpthread -lssl -lcrypto
 INCLUDES = -I../../deps/include -I../../include -I../../shared -I../include
 

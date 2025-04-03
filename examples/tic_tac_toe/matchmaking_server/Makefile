@@ -1,6 +1,7 @@
 CXX      = clang++
 CXXFLAGS = -O1 -std=c++17 -DASIO_STANDALONE \
-	-Wall -Wno-deprecated-declarations -Wno-unused-private-field
+	-Wall -Wno-deprecated-declarations -Wno-unused-private-field \
+	-Wno-template-id-cdtor
 LDFLAGS = -lpthread -lssl -lcrypto
 INCLUDES = -I../../../deps/include -I../../../include -I../../../shared
 
@@ -11,10 +12,10 @@ DEPS   = $(SRCS:.cpp=.depends)
 
 .PHONY: clean all run
 
-all: matchmaking_server public_html
+all: $(TARGET) public_html
 
 public_html:
-	cd client; npm install; npm run build; cp -r build ../public_html
+		cd client; npm install; npm run build; cp -r build ../public_html
 
 $(TARGET): $(OBJS)
 		$(CXX) $(INCLUDES) $(LDFLAGS) $(OBJS) -o $(TARGET)

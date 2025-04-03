@@ -74,6 +74,7 @@ void http_handler(ttt_server::connection_ptr conn) {
         .sign(jwt::algorithm::hs256{secret});
       player_database.push_back({ .elo = 1500 });
       conn->set_body(token);
+      conn->append_header("Content-Type", "application/json");
       return;
     }
     const std::string info("/info/");
@@ -96,6 +97,7 @@ void http_handler(ttt_server::connection_ptr conn) {
         resp_json["rating"] = player_database.at(pid).elo;
         conn->set_status(websocketpp::http::status_code::ok);
         conn->set_body(resp_json.dump());
+        conn->append_header("Content-Type", "application/json");
         return;
       } catch (std::exception &e) {
         spdlog::debug("invalid jwt /info/{}: {}", token, e.what());
@@ -136,6 +138,7 @@ void http_handler(ttt_server::connection_ptr conn) {
           .sign(jwt::algorithm::hs256{secret});
         conn->set_status(websocketpp::http::status_code::ok);
         conn->set_body(match_token);
+        conn->append_header("Content-Type", "text/plain");
         return;
       } catch (std::exception &e) {
         spdlog::debug("invalid jwt /login/{}: {}", token, e.what());
@@ -186,6 +189,7 @@ void http_handler(ttt_server::connection_ptr conn) {
 
         conn->set_status(websocketpp::http::status_code::ok);
         conn->set_body(resp_json.dump());
+        conn->append_header("Content-Type", "application/json");
         return;
       } catch (std::exception &e) {
         spdlog::debug("invalid jwt /submit/{}: {}", token, e.what());
@@ -194,6 +198,7 @@ void http_handler(ttt_server::connection_ptr conn) {
 
         conn->set_status(websocketpp::http::status_code::ok);
         conn->set_body(resp_json.dump());
+        conn->append_header("Content-Type", "application/json");
         return;
       }
     }
@@ -228,6 +233,7 @@ void http_handler(ttt_server::connection_ptr conn) {
 
         conn->set_status(websocketpp::http::status_code::ok);
         conn->set_body(resp_json.dump());
+        conn->append_header("Content-Type", "application/json");
         return;
       } catch (std::exception &e) {
         spdlog::debug("invalid jwt /cancel/{}: {}", token, e.what());
@@ -236,6 +242,7 @@ void http_handler(ttt_server::connection_ptr conn) {
 
         conn->set_status(websocketpp::http::status_code::ok);
         conn->set_body(resp_json.dump());
+        conn->append_header("Content-Type", "application/json");
         return;
       }
     }
@@ -248,7 +255,6 @@ void http_handler(ttt_server::connection_ptr conn) {
       file_path = static_path / "index.html";
     } else {
       try {
-        // file_path = static_path / std::filesystem::path(uri);
         file_path = std::filesystem::canonical(file_path);
       } catch (std::exception &e) {
         spdlog::debug("uri non-canonical: {}", e.what());
@@ -269,13 +275,25 @@ void http_handler(ttt_server::connection_ptr conn) {
       return;
     }
 
+    std::string mime_type;
+    if (file_path.string().find(".js") != std::string::npos) {
+      mime_type = std::string("text/javascript");
+    } else if (file_path.string().find(".css") != std::string::npos) {
+      mime_type = std::string("text/css");
+    } else if (file_path.string().find(".html") != std::string::npos) {
+      mime_type = std::string("text/html");
+    } else {
+      mime_type = std::string("text/plain");
+    }
+
     std::string content(
       (std::istreambuf_iterator<char>(ifs)),
       (std::istreambuf_iterator<char>())
     );
-    // spdlog::debug("responding with body: {}", content);
+
     conn->set_status(websocketpp::http::status_code::ok);
     conn->set_body(content);
+    conn->append_header("Content-Type", mime_type);
   } catch (std::exception &e) {
     spdlog::debug("response failed to update: {}", e.what());
   }

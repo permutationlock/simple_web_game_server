@@ -4081,7 +4081,8 @@ namespace {
         static bool             isSet;
         static struct sigaction oldSigActions[DOCTEST_COUNTOF(signalDefs)];
         static stack_t          oldSigStack;
-        static char             altStackMem[4 * SIGSTKSZ];
+        // MODIFIED: April, 2025 by Aven Bross - SIGSTKZ no longer constant in recent glibc
+        static char             altStackMem[4 * 4096 * 2000]; // altStackMem[4 * SIGSTKSZ]
 
         static void handleSignal(int sig) {
             const char* name = "<unknown signal>";

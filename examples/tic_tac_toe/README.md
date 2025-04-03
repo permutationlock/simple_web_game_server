@@ -12,7 +12,7 @@ client Tic Tac Toe app.
 *My apologies for the npm dependency garbage, I wrote this back when I
 was learning React because I thought I might want a web programming job.
 It should be re-written it in plain JavaScript at some point, but I have
-better things to do.
+better things to do.*
 
 Because this app uses TLS for the HTTPS and WSS protocols, you must have an
 authorized certificate for the domain name where you serve the application. To
@@ -24,7 +24,7 @@ certificate key pair:
  mkcert -key-file key.pem -cert-file cert.pem localhost
 ```
 
-To build and run the web + matchmaking server:
+To build and run the http + matchmaking server:
 
 ```shell
  cd matchmaking_server
@@ -41,5 +41,5 @@ To build and run the game server:
 ```
 
 Once both are running, go to
-[https://localhost:9092](https://localhost:9092) in any
+[https://localhost:9091/](https://localhost:9091/) in a
 browser to access the app.

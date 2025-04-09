@@ -65,6 +65,11 @@ void http_handler(ttt_server::connection_ptr conn) {
     if (uri.compare("/signup") == 0 || uri.compare("/signup/") == 0) {
       if (player_database.size() >= MAX_PIDS) {
         spdlog::error("out of PIDS");
+        json resp_json;
+        resp_json["success"] = false;
+        conn->set_body(resp_json.dump());
+        conn->append_header("Content-Type", "application/json");
+        return;
       }
       conn->set_status(websocketpp::http::status_code::ok);
       std::string token = jwt::create<nlohmann_traits>()
@@ -72,8 +77,11 @@ void http_handler(ttt_server::connection_ptr conn) {
         .set_payload_claim("pid",
           claim((combined_id::player_id)player_database.size()))
         .sign(jwt::algorithm::hs256{secret});
+      json resp_json;
+      resp_json["success"] = true;
+      resp_json["token"] = token;
       player_database.push_back({ .elo = 1500 });
-      conn->set_body(token);
+      conn->set_body(resp_json.dump());
       conn->append_header("Content-Type", "application/json");
       return;
     }

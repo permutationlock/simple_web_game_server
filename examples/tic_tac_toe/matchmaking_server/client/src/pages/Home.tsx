@@ -49,11 +49,14 @@ class Home extends React.Component<HomeProps, HomeState> {
     if(token === null) {
       fetch(signupUri)
         .then(response => response.text())
-        .then((tokenStr) => {
-          console.log('player token1: ' + tokenStr);
-          sessionStorage.setItem("token", tokenStr);
-          this.setState({ token: tokenStr, disabled: false });
-          this.getPlayerInfo(tokenStr);
+        .then((dataStr) => {
+          console.log('player token1: ' + dataStr);
+          let data: any = JSON.parse(dataStr);
+          if (data.success) {
+            sessionStorage.setItem("token", data.token);
+            this.setState({ token: data.token, disabled: false });
+            this.getPlayerInfo(data.token);
+          }
         });
     } else {
       console.log('player token2: ' + token);
